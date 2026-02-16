@@ -46,6 +46,8 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+You can also run `python app.py`; it now self-bootstraps into Streamlit mode automatically.
+
 ## Tests
 
 ```bash
@@ -68,8 +70,10 @@ python examples/generate_sample_output.py
 ## Troubleshooting
 
 - If you see `ImportError: cannot import name field_validator from pydantic`, upgrade to pydantic v2 **or** use this repo version which supports both pydantic v1 and v2.
-- Launch the app with Streamlit, not plain Python:
+- Preferred launch command:
 
 ```bash
 streamlit run app.py
 ```
+
+- If you run `python app.py`, the script now auto-launches Streamlit for you.

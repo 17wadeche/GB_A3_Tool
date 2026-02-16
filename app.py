@@ -13,44 +13,50 @@ from a3_autopilot.slide_builder import render_single_slide
 from a3_autopilot.utils import model_dump_compat, to_date_or_default
 
 
-st.set_page_config(page_title="A3 Autopilot", layout="wide")
-st.title("A3 Autopilot")
-st.caption("Autopilot default: minimal inputs, inferred assumptions labeled ASSUMPTION, one-slide export.")
+def render_app() -> None:
+    st.set_page_config(page_title="A3 Autopilot", layout="wide")
+    st.title("A3 Autopilot")
+    st.caption("Autopilot default: minimal inputs, inferred assumptions labeled ASSUMPTION, one-slide export.")
 
-sections = st.tabs(["A) Define", "B) Measure", "C) Analyze", "D) Improve", "E) Control"])
+    sections = st.tabs(["A) Define", "B) Measure", "C) Analyze", "D) Improve", "E) Control"])
 
-with st.form("dmaic_form"):
-    with sections[0]:
-        problem_statement = st.text_input("Problem statement *", placeholder="Late delivery defects exceed target")
-        business_impact = st.text_input("Business impact")
-        c1, c2 = st.columns(2)
-        with c1:
-            scope_in = st.text_input("Scope in", value="Order-to-ship")
-            goal_metric = st.text_input("Goal metric", value="Defect rate")
-            target = st.number_input("Target", min_value=0.0, value=5.0, step=0.5)
-        with c2:
-            scope_out = st.text_input("Scope out", value="Supplier lead-time")
-            due_date = st.date_input("Due date", value=date.today() + timedelta(days=60))
-            baseline = st.number_input("Baseline", min_value=0.0, value=12.0, step=0.5)
-        team_raw = st.text_area("Team members (Name:Role per line)", value="Alex:Champion\nPriya:Process Owner\nSam:Analyst")
+    with st.form("dmaic_form"):
+        with sections[0]:
+            problem_statement = st.text_input("Problem statement *", placeholder="Late delivery defects exceed target")
+            business_impact = st.text_input("Business impact")
+            c1, c2 = st.columns(2)
+            with c1:
+                scope_in = st.text_input("Scope in", value="Order-to-ship")
+                goal_metric = st.text_input("Goal metric", value="Defect rate")
+                target = st.number_input("Target", min_value=0.0, value=5.0, step=0.5)
+            with c2:
+                scope_out = st.text_input("Scope out", value="Supplier lead-time")
+                due_date = st.date_input("Due date", value=date.today() + timedelta(days=60))
+                baseline = st.number_input("Baseline", min_value=0.0, value=12.0, step=0.5)
+            team_raw = st.text_area(
+                "Team members (Name:Role per line)",
+                value="Alex:Champion\nPriya:Process Owner\nSam:Analyst",
+            )
 
-    with sections[1]:
-        uploaded = st.file_uploader("Upload CSV/XLSX (optional)", type=["csv", "xlsx"])
-        st.caption("Field mapping helper appears after upload.")
+        with sections[1]:
+            uploaded = st.file_uploader("Upload CSV/XLSX (optional)", type=["csv", "xlsx"])
+            st.caption("Field mapping helper appears after upload.")
 
-    with sections[2]:
-        st.markdown("Pareto, fishbone (6M), and 5 Whys are auto-generated.")
-    with sections[3]:
-        st.markdown("Countermeasures are scored on impact/effort/risk with primary + backup recommendation.")
-    with sections[4]:
-        st.markdown("Control plan + RACI are auto-generated with owner, due date, KPI, and control method.")
+        with sections[2]:
+            st.markdown("Pareto, fishbone (6M), and 5 Whys are auto-generated.")
+        with sections[3]:
+            st.markdown("Countermeasures are scored on impact/effort/risk with primary + backup recommendation.")
+        with sections[4]:
+            st.markdown("Control plan + RACI are auto-generated with owner, due date, KPI, and control method.")
 
-    submitted = st.form_submit_button("Generate complete DMAIC A3")
+        submitted = st.form_submit_button("Generate complete DMAIC A3")
 
-if submitted:
+    if not submitted:
+        return
+
     if not problem_statement.strip():
         st.error("Problem statement is required.")
-        st.stop()
+        return
 
     team = []
     for line in team_raw.splitlines():
@@ -138,3 +144,18 @@ if submitted:
                 "actions": [model_dump_compat(a) for a in pkg.actions],
             }
         )
+
+
+def _launch_streamlit() -> None:
+    from streamlit.web import bootstrap
+
+    bootstrap.run(str(Path(__file__).resolve()), "", [], {})
+
+
+if __name__ == "__main__":
+    from streamlit.runtime.scriptrunner_utils.script_run_context import get_script_run_ctx
+
+    if get_script_run_ctx() is None:
+        _launch_streamlit()
+    else:
+        render_app()
