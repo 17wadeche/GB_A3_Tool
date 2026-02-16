@@ -3,7 +3,12 @@ from __future__ import annotations
 from datetime import date
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
+
+try:  # pydantic v2
+    from pydantic import field_validator as _field_validator
+except ImportError:  # pydantic v1
+    from pydantic import validator as _field_validator  # type: ignore
 
 
 class Assumption(BaseModel):
@@ -59,6 +64,9 @@ class Countermeasure(BaseModel):
     impact: int
     effort: int
     risk: int
+    priority_score: float = 0.0
+    is_primary: bool = False
+    is_backup: bool = False
 
 
 class ActionItem(BaseModel):
@@ -72,8 +80,7 @@ class ActionItem(BaseModel):
     consulted: List[str] = Field(default_factory=list)
     informed: List[str] = Field(default_factory=list)
 
-    @field_validator("responsible")
-    @classmethod
+    @_field_validator("responsible")
     def responsible_required(cls, v: List[str]) -> List[str]:
         if not v:
             raise ValueError("At least one responsible person is required")
@@ -101,3 +108,5 @@ class DmaicPackage(BaseModel):
     assumptions: List[Assumption]
     confidence_score: float
     confidence_notes: List[str]
+    dmaic_narrative: Dict[str, str] = Field(default_factory=dict)
+    traceability_graph: Dict[str, Dict[str, List[str]]] = Field(default_factory=dict)

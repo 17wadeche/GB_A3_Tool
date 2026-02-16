@@ -63,3 +63,13 @@ python examples/generate_sample_output.py
 - Optional LLM summarization is intentionally interface-ready and can be added behind module boundaries without changing the workflow.
 - Export always creates one `.pptx` containing one slide.
 - The binary sample PPTX is intentionally generated locally (not committed) to keep PR diffs text-only and compatible with code-review tooling.
+
+
+## Troubleshooting
+
+- If you see `ImportError: cannot import name field_validator from pydantic`, upgrade to pydantic v2 **or** use this repo version which supports both pydantic v1 and v2.
+- Launch the app with Streamlit, not plain Python:
+
+```bash
+streamlit run app.py
+```

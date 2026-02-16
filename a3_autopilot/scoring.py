@@ -9,9 +9,7 @@ def quality_gate(pkg: DmaicPackage) -> tuple[bool, list[str]]:
         issues.append("baseline metric present")
     if not pkg.define.goal_metric.target or not pkg.define.goal_metric.due_date:
         issues.append("target metric + due date present")
-    if not pkg.root_causes:
-        issues.append("root cause linked to evidence")
-    elif any(not rc.evidence_note for rc in pkg.root_causes):
+    if not pkg.root_causes or any(not rc.evidence_note for rc in pkg.root_causes):
         issues.append("root cause linked to evidence")
 
     root_ids = {rc.id for rc in pkg.root_causes}
@@ -24,19 +22,25 @@ def quality_gate(pkg: DmaicPackage) -> tuple[bool, list[str]]:
         if not all([action.owner, action.due_date, action.kpi, action.control_method]):
             issues.append("each action has owner + due date + KPI + control step")
             break
+        if len(action.responsible) < 1:
+            issues.append("each action must have at least one Responsible")
+            break
+        if not action.accountable:
+            issues.append("each action must have exactly one Accountable")
+            break
 
     return len(issues) == 0, issues
 
 
 def confidence_notes_from_data(has_dataset: bool, root_count: int) -> tuple[float, list[str]]:
-    score = 0.55
+    score = 0.5
     notes = []
     if has_dataset:
-        score += 0.2
+        score += 0.25
     else:
         notes.append("Upload defect/count/cost history to improve confidence.")
     if root_count >= 3:
-        score += 0.15
+        score += 0.2
     else:
         notes.append("More validated root-cause evidence would improve confidence.")
     score = round(min(score, 0.95), 2)
