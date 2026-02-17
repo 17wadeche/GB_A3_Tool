@@ -1,10 +1,7 @@
 from datetime import date
-
 from a3_autopilot.dmaic import orchestrate_dmaic
 from a3_autopilot.models import DefineInput, GoalMetric, MeasureInput, TeamMember
 from a3_autopilot.scoring import quality_gate
-
-
 def _define():
     return DefineInput(
         problem_statement="Escapes increased",
@@ -14,8 +11,6 @@ def _define():
         goal_metric=GoalMetric(metric_name="Escapes", baseline=12, target=5, due_date=date.today()),
         team=[TeamMember(name="Alex", role="Owner"), TeamMember(name="Priya", role="Analyst")],
     )
-
-
 def test_countermeasures_link_to_root_causes_and_actions_complete(tmp_path):
     pkg = orchestrate_dmaic(_define(), MeasureInput(dataset_present=False), dataset=None, output_dir=tmp_path)
     root_ids = {rc.id for rc in pkg.root_causes}

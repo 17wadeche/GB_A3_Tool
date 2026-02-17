@@ -1,8 +1,5 @@
 from __future__ import annotations
-
 from a3_autopilot.models import DmaicPackage
-
-
 def quality_gate(pkg: DmaicPackage) -> tuple[bool, list[str]]:
     issues: list[str] = []
     if pkg.define.goal_metric.baseline is None and "baseline" not in str(pkg.measure_summary).lower():
@@ -11,13 +8,11 @@ def quality_gate(pkg: DmaicPackage) -> tuple[bool, list[str]]:
         issues.append("target metric + due date present")
     if not pkg.root_causes or any(not rc.evidence_note for rc in pkg.root_causes):
         issues.append("root cause linked to evidence")
-
     root_ids = {rc.id for rc in pkg.root_causes}
     for cm in pkg.countermeasures:
         if not set(cm.linked_root_cause_ids).intersection(root_ids):
             issues.append("each countermeasure linked to root cause")
             break
-
     for action in pkg.actions:
         if not all([action.owner, action.due_date, action.kpi, action.control_method]):
             issues.append("each action has owner + due date + KPI + control step")
@@ -28,10 +23,7 @@ def quality_gate(pkg: DmaicPackage) -> tuple[bool, list[str]]:
         if not action.accountable:
             issues.append("each action must have exactly one Accountable")
             break
-
     return len(issues) == 0, issues
-
-
 def confidence_notes_from_data(has_dataset: bool, root_count: int) -> tuple[float, list[str]]:
     score = 0.5
     notes = []

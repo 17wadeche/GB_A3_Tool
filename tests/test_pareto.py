@@ -1,8 +1,5 @@
 import pandas as pd
-
 from a3_autopilot.pareto import build_pareto
-
-
 def test_pareto_vital_few_and_cumulative():
     df = pd.DataFrame(
         {

@@ -1,12 +1,8 @@
 from datetime import date
-
 from pptx import Presentation
-
 from a3_autopilot.dmaic import orchestrate_dmaic
 from a3_autopilot.models import DefineInput, GoalMetric, MeasureInput, TeamMember
 from a3_autopilot.slide_builder import render_single_slide
-
-
 def test_single_slide_export(tmp_path):
     define = DefineInput(
         problem_statement="Lead time variation",
@@ -19,6 +15,5 @@ def test_single_slide_export(tmp_path):
     pkg = orchestrate_dmaic(define, MeasureInput(dataset_present=False), dataset=None, output_dir=tmp_path)
     output = tmp_path / "out.pptx"
     render_single_slide(pkg, output)
-
     prs = Presentation(str(output))
     assert len(prs.slides) == 1

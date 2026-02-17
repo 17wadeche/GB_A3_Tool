@@ -1,8 +1,5 @@
 from __future__ import annotations
-
 from a3_autopilot.models import DefineInput
-
-
 def generate_project_charter(define: DefineInput) -> dict[str, str]:
     return {
         "problem": define.problem_statement,

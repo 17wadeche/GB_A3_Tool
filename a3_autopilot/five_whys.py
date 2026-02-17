@@ -1,21 +1,13 @@
 from __future__ import annotations
-
 from typing import Iterable
-
 import pandas as pd
-
 from a3_autopilot.models import FiveWhyNode, RootCause
-
-
 def _confidence_from_support(support_count: int) -> float:
     return round(min(0.95, 0.35 + support_count * 0.1), 2)
-
-
 def generate_five_whys(problem_statement: str, signals: Iterable[str]) -> list[FiveWhyNode]:
     signal_list = [s for s in signals if s]
     levels = min(5, max(3, len(signal_list)))
     whys: list[FiveWhyNode] = []
-
     current = problem_statement
     for i in range(levels):
         signal = signal_list[i] if i < len(signal_list) else "process variation"
@@ -25,8 +17,6 @@ def generate_five_whys(problem_statement: str, signals: Iterable[str]) -> list[F
         whys.append(FiveWhyNode(level=i + 1, why=why_text, evidence_note=evidence, confidence=conf))
         current = why_text
     return whys
-
-
 def derive_root_causes(whys: list[FiveWhyNode], pareto_df: pd.DataFrame | None = None) -> list[RootCause]:
     roots: list[RootCause] = []
     categories = ["Method", "Man", "Measurement", "Machine", "Material", "Environment"]

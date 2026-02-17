@@ -1,10 +1,6 @@
 from __future__ import annotations
-
 from collections import defaultdict
-
 from a3_autopilot.models import ActionItem
-
-
 def build_raci(actions: list[ActionItem]) -> dict[str, dict[str, str]]:
     matrix: dict[str, dict[str, str]] = {}
     for action in actions:
