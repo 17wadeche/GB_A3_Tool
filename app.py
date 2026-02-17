@@ -146,6 +146,7 @@ def render_app() -> None:
     if feedback is not None:
         st.subheader("AI Coach feedback")
         st.metric("Problem statement quality", f"{feedback.score}/100")
+        st.caption(f"Detected context: {feedback.detected_context.replace('_', ' ')}")
         if feedback.strengths:
             st.success("Strong components detected")
             st.write(feedback.strengths)

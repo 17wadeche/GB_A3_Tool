@@ -1,6 +1,7 @@
 from a3_autopilot.problem_coach import (
     EXAMPLE_PROBLEM_STATEMENT,
     build_define_draft,
+    detect_context,
     evaluate_problem_statement,
     rewrite_problem_statement,
 )
@@ -11,6 +12,7 @@ def test_problem_statement_example_scores_high() -> None:
 
     assert feedback.score >= 80
     assert not feedback.missing_components
+    assert feedback.detected_context == "complaint_handling"
 
 
 def test_problem_statement_coach_flags_gaps() -> None:
@@ -36,3 +38,13 @@ def test_rewrite_problem_statement_returns_expanded_version() -> None:
 
     assert "34.0%" in rewritten
     assert "compliance risk" in rewritten.lower() or "regulatory" in rewritten.lower()
+
+
+def test_general_problem_uses_general_context() -> None:
+    statement = "Getting done work around here is difficult and tasks are often delayed."
+
+    assert detect_context(statement) == "general"
+    feedback = evaluate_problem_statement(statement)
+    assert feedback.detected_context == "general"
+    draft = build_define_draft(statement)
+    assert "Workflow" in draft.project_y or "workflow" in draft.project_y.lower()
