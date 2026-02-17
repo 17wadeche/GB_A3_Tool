@@ -8,27 +8,44 @@ import streamlit as st
 from a3_autopilot.dmaic import orchestrate_dmaic
 from a3_autopilot.ingestion import load_dataset
 from a3_autopilot.models import DefineInput, GoalMetric, MeasureInput, TeamMember
-from a3_autopilot.problem_coach import EXAMPLE_PROBLEM_STATEMENT, build_define_draft, evaluate_problem_statement
+from a3_autopilot.problem_coach import (
+    EXAMPLE_PROBLEM_STATEMENT,
+    build_define_draft,
+    evaluate_problem_statement,
+    rewrite_problem_statement,
+)
 from a3_autopilot.scoring import quality_gate
 from a3_autopilot.slide_builder import render_single_slide
 from a3_autopilot.utils import model_dump_compat, to_date_or_default
 
 
+WIDGET_DEFAULTS = {
+    "problem_statement_input": "",
+    "project_y": "",
+    "goal_statement": "",
+    "do_not_harm": "",
+    "business_impact": "",
+    "scope_in": "",
+    "scope_out": "",
+    "goal_metric": "",
+    "target": 0.0,
+    "baseline": 0.0,
+    "team_raw": "",
+}
+
+
 def _init_state() -> None:
-    defaults = {
-        "problem_statement_input": "",
-        "project_y": "",
-        "goal_statement": "",
-        "do_not_harm": "",
-        "business_impact": "",
-        "scope_in": "",
-        "scope_out": "",
-        "goal_metric": "",
-        "target": 0.0,
-        "baseline": 0.0,
-        "team_raw": "",
-    }
-    for key, value in defaults.items():
+    if "coach_feedback" not in st.session_state:
+        st.session_state["coach_feedback"] = None
+    if "coached_rewrite" not in st.session_state:
+        st.session_state["coached_rewrite"] = ""
+
+    pending = st.session_state.pop("_pending_widget_updates", None)
+    if isinstance(pending, dict):
+        for key, value in pending.items():
+            st.session_state[key] = value
+
+    for key, value in WIDGET_DEFAULTS.items():
         if key not in st.session_state:
             st.session_state[key] = value
 
@@ -37,14 +54,15 @@ def render_app() -> None:
     st.set_page_config(page_title="A3 Autopilot", layout="wide")
     st.title("A3 Autopilot")
     st.caption("A guided DMAIC coach that walks users step-by-step and builds a one-slide A3 export.")
+
     _init_state()
 
     st.info(
-        "1) Draft a strong problem statement. 2) Ask AI Coach to review it and pre-fill Define fields. "
-        "3) Review/update and generate the full A3 package."
+        "1) Draft a strong problem statement. 2) Ask AI Coach to review and pre-fill Define fields. "
+        "3) Update anything you want, then generate the A3 package."
     )
 
-    sections = st.tabs(["A) Define", "B) Measure", "C) Analyze", "D) Improve", "E) Control"]
+    sections = st.tabs(["A) Define", "B) Measure", "C) Analyze", "D) Improve", "E) Control"])
     with st.form("dmaic_form"):
         with sections[0]:
             st.subheader("Step 1: Define the problem")
@@ -58,24 +76,9 @@ def render_app() -> None:
             st.caption(EXAMPLE_PROBLEM_STATEMENT)
 
             project_y = st.text_input("Project Y", key="project_y", placeholder="Primary Y/output this project improves")
-            goal_statement = st.text_area(
-                "Goal",
-                key="goal_statement",
-                placeholder="SMART goal statement for this project",
-                height=80,
-            )
-            do_not_harm = st.text_area(
-                "Do not harm",
-                key="do_not_harm",
-                placeholder="Guardrails that must not be compromised",
-                height=80,
-            )
-            business_impact = st.text_area(
-                "Business impact",
-                key="business_impact",
-                placeholder="Explain compliance, quality, operational, or patient impact.",
-                height=90,
-            )
+            goal_statement = st.text_area("Goal", key="goal_statement", placeholder="SMART goal statement", height=80)
+            do_not_harm = st.text_area("Do not harm", key="do_not_harm", placeholder="Guardrails", height=80)
+            business_impact = st.text_area("Business impact", key="business_impact", placeholder="Compliance / quality / patient impact", height=90)
 
             c1, c2 = st.columns(2)
             with c1:
@@ -96,7 +99,6 @@ def render_app() -> None:
         with sections[1]:
             st.subheader("Step 2: Add data (optional but recommended)")
             uploaded = st.file_uploader("Upload CSV/XLSX (optional)", type=["csv", "xlsx"])
-            st.caption("If data is provided, field mapping can be adjusted after upload.")
 
         with sections[2]:
             st.subheader("Step 3: Analyze")
@@ -111,22 +113,37 @@ def render_app() -> None:
             st.markdown("Control plan and RACI are auto-generated with owner, due date, KPI, and control method.")
 
         coach_clicked = st.form_submit_button("Ask AI Coach")
+        use_rewrite_clicked = st.form_submit_button("Use coached rewrite")
         submitted = st.form_submit_button("Generate complete DMAIC A3")
 
     if coach_clicked:
         feedback = evaluate_problem_statement(problem_statement)
         draft = build_define_draft(problem_statement)
+        coached_rewrite = rewrite_problem_statement(problem_statement)
 
-        st.session_state["project_y"] = draft.project_y
-        st.session_state["goal_statement"] = draft.goal_statement
-        st.session_state["do_not_harm"] = draft.do_not_harm
-        st.session_state["business_impact"] = draft.business_impact
-        st.session_state["scope_in"] = draft.scope_in
-        st.session_state["scope_out"] = draft.scope_out
-        st.session_state["goal_metric"] = draft.goal_metric
-        st.session_state["baseline"] = float(draft.baseline)
-        st.session_state["target"] = float(draft.target)
+        st.session_state["coach_feedback"] = feedback
+        st.session_state["coached_rewrite"] = coached_rewrite
+        st.session_state["_pending_widget_updates"] = {
+            "project_y": draft.project_y,
+            "goal_statement": draft.goal_statement,
+            "do_not_harm": draft.do_not_harm,
+            "business_impact": draft.business_impact,
+            "scope_in": draft.scope_in,
+            "scope_out": draft.scope_out,
+            "goal_metric": draft.goal_metric,
+            "baseline": float(draft.baseline),
+            "target": float(draft.target),
+        }
+        st.rerun()
 
+    if use_rewrite_clicked and st.session_state.get("coached_rewrite"):
+        st.session_state["_pending_widget_updates"] = {
+            "problem_statement_input": st.session_state["coached_rewrite"],
+        }
+        st.rerun()
+
+    feedback = st.session_state.get("coach_feedback")
+    if feedback is not None:
         st.subheader("AI Coach feedback")
         st.metric("Problem statement quality", f"{feedback.score}/100")
         if feedback.strengths:
@@ -135,8 +152,10 @@ def render_app() -> None:
         if feedback.missing_components:
             st.warning("Missing or weak components")
             st.write(feedback.missing_components)
-        st.info("Define fields have been pre-filled from your problem statement. Review and edit as needed.")
         st.info(f"Suggested rewrite template: {feedback.suggested_rewrite}")
+        st.write("**Coached rewrite (based on your draft):**")
+        st.caption(st.session_state.get("coached_rewrite") or "")
+        st.info("Define fields were pre-filled. Review and edit as needed.")
 
     if not submitted:
         return
@@ -173,7 +192,6 @@ def render_app() -> None:
     if uploaded is not None:
         dataset, auto_mapping = load_dataset(uploaded)
         st.success(f"Loaded {len(dataset)} rows.")
-        st.write("Auto-detected mapping:", auto_mapping)
         cols = ["(none)"] + list(dataset.columns)
         field_map = {}
         for canonical in ["category", "impact", "date", "process_step", "owner"]:
@@ -189,15 +207,12 @@ def render_app() -> None:
     passed, issues = quality_gate(pkg)
 
     st.subheader("Quality Gate")
-    st.success("PASS: export requirements met.") if passed else st.error(f"FAIL: {issues}")
+    if passed:
+        st.success("PASS: export requirements met.")
+    else:
+        st.error(f"FAIL: {issues}")
 
     output_pptx = render_single_slide(pkg, Path("examples") / "sample_a3_single_slide.pptx")
-    st.subheader("Autopilot Results")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Confidence", f"{pkg.confidence_score:.2f}")
-    c2.metric("Root causes", len(pkg.root_causes))
-    c3.metric("Countermeasures", len(pkg.countermeasures))
-
     with open(output_pptx, "rb") as f:
         st.download_button(
             "Download one-slide PPTX",
@@ -206,16 +221,11 @@ def render_app() -> None:
             mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         )
 
-    if pkg.pareto_chart_path:
-        st.image(pkg.pareto_chart_path, caption="Pareto chart")
-
     with st.expander("Raw package"):
         st.json(
             {
                 "define": model_dump_compat(define),
                 "measure_summary": pkg.measure_summary,
-                "countermeasures": [model_dump_compat(c) for c in pkg.countermeasures],
-                "actions": [model_dump_compat(a) for a in pkg.actions],
             }
         )
 

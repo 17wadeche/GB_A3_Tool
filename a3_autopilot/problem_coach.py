@@ -103,6 +103,40 @@ def build_define_draft(statement: str) -> DefineDraft:
     )
 
 
+
+def rewrite_problem_statement(statement: str) -> str:
+    text = (statement or "").strip()
+    if not text:
+        return EXAMPLE_PROBLEM_STATEMENT
+
+    lowered = text.lower()
+    has_time = _contains_any(
+        lowered,
+        ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december", "week", "month", "quarter", "q1", "q2", "q3", "q4", "202"],
+    )
+    has_org = _contains_any(lowered, ["medtronic", "site", "plant", "department", "process", "team"])
+    percent = _extract_percent(text)
+    days = _extract_days(text)
+
+    timeframe = "in the last quarter" if not has_time else "during the stated period"
+    location = "within the Medtronic complaint handling process" if not has_org else "within the identified Medtronic process"
+
+    magnitude = "at a materially elevated rate"
+    if percent is not None:
+        magnitude = f"at {percent:.1f}%"
+    elif days is not None:
+        magnitude = f"with an average delay of {days:.1f} days"
+
+    impact = "creating compliance risk, operational delay, and potential patient impact"
+    if "mdr" in lowered or "regulatory" in lowered:
+        impact = "creating risk of late regulatory reporting and increased audit exposure"
+
+    core_issue = text.rstrip(".")
+    return (
+        f"{timeframe.capitalize()}, {location}, {core_issue} occurs {magnitude}, "
+        f"{impact}."
+    )
+
 def evaluate_problem_statement(statement: str) -> ProblemStatementFeedback:
     text = (statement or "").strip()
     lowered = text.lower()

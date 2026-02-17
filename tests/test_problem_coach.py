@@ -1,4 +1,9 @@
-from a3_autopilot.problem_coach import EXAMPLE_PROBLEM_STATEMENT, build_define_draft, evaluate_problem_statement
+from a3_autopilot.problem_coach import (
+    EXAMPLE_PROBLEM_STATEMENT,
+    build_define_draft,
+    evaluate_problem_statement,
+    rewrite_problem_statement,
+)
 
 
 def test_problem_statement_example_scores_high() -> None:
@@ -24,3 +29,10 @@ def test_build_define_draft_prefills_fields() -> None:
     assert draft.do_not_harm
     assert draft.goal_metric
     assert draft.target > 0
+
+
+def test_rewrite_problem_statement_returns_expanded_version() -> None:
+    rewritten = rewrite_problem_statement("Complaint intake has 34% missing mandatory fields causing delays.")
+
+    assert "34.0%" in rewritten
+    assert "compliance risk" in rewritten.lower() or "regulatory" in rewritten.lower()
