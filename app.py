@@ -8,7 +8,7 @@ import streamlit as st
 from a3_autopilot.dmaic import orchestrate_dmaic
 from a3_autopilot.ingestion import load_dataset
 from a3_autopilot.models import DefineInput, GoalMetric, MeasureInput, TeamMember
-from a3_autopilot.problem_coach import coach_define_phase, tool_guidance_from_result
+from a3_autopilot.problem_coach import api_key_available, coach_define_phase, tool_guidance_from_result
 from a3_autopilot.scoring import quality_gate
 from a3_autopilot.slide_builder import render_single_slide
 from a3_autopilot.utils import model_dump_compat, to_date_or_default
@@ -57,6 +57,15 @@ def render_app() -> None:
     st.title("A3 Autopilot")
     st.caption("Black Belt-style DMAIC coach with AI-powered Define coaching and Lean Six Sigma tool guidance.")
     _init_state()
+
+    with st.expander("AI configuration", expanded=False):
+        st.caption("Use OPENAI_API_KEY from environment, or enter a temporary API key for this session.")
+        session_api_key = st.text_input("OpenAI API Key (session only)", type="password", key="session_openai_api_key")
+        has_key = api_key_available(session_api_key)
+        if has_key:
+            st.success("AI key detected. Ask AI Coach is ready.")
+        else:
+            st.warning("No AI key detected yet. Add one above or set OPENAI_API_KEY.")
 
     sections = st.tabs(["A) Define", "B) Measure", "C) Analyze", "D) Improve", "E) Control", "F) Lean Tool Coach"])
     with st.form("dmaic_form"):
@@ -107,7 +116,7 @@ def render_app() -> None:
             st.markdown("Ask anything about VOC, CTQ, SIPOC, process mapping, VSM, MSA, capability, and control planning.")
             question = st.text_input("Coaching question (optional)", key="coach_question")
 
-        coach_clicked = st.form_submit_button("Ask AI Coach")
+        coach_clicked = st.form_submit_button("Ask AI Coach", disabled=not has_key)
         submitted = st.form_submit_button("Generate complete DMAIC A3")
 
     if coach_clicked:
@@ -125,7 +134,7 @@ def render_app() -> None:
             "due_date": str(due_date),
         }
         try:
-            result = coach_define_phase(problem_statement, define_fields, question=question)
+            result = coach_define_phase(problem_statement, define_fields, question=question, api_key=session_api_key or None)
             st.session_state["coach_result"] = result
             st.session_state["coach_error"] = ""
 
@@ -155,7 +164,10 @@ def render_app() -> None:
                 st.session_state["_pending_widget_updates"] = updates
                 st.rerun()
         except RuntimeError as exc:
-            st.session_state["coach_error"] = str(exc)
+            message = str(exc)
+            if "OPENAI_API_KEY" in message:
+                message += " Enter a key in the AI configuration panel, or set OPENAI_API_KEY in your environment."
+            st.session_state["coach_error"] = message
 
     if st.session_state.get("coach_error"):
         st.error(st.session_state["coach_error"])

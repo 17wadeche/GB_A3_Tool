@@ -16,8 +16,8 @@ class LeanToolGuidance:
     starter_prompt: str
 
 
-def _call_ai_json(system_prompt: str, user_payload: Dict[str, Any]) -> Dict[str, Any]:
-    api_key = os.getenv("OPENAI_API_KEY")
+def _call_ai_json(system_prompt: str, user_payload: Dict[str, Any], api_key: str | None = None) -> Dict[str, Any]:
+    api_key = api_key or os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not set. AI coaching requires a configured API key.")
 
@@ -53,7 +53,16 @@ def _call_ai_json(system_prompt: str, user_payload: Dict[str, Any]) -> Dict[str,
         raise RuntimeError("AI returned non-JSON content. Please retry.") from exc
 
 
-def coach_define_phase(problem_statement: str, define_fields: Dict[str, Any], question: str = "") -> Dict[str, Any]:
+def api_key_available(session_api_key: str | None = None) -> bool:
+    return bool((session_api_key or "").strip() or os.getenv("OPENAI_API_KEY"))
+
+
+def coach_define_phase(
+    problem_statement: str,
+    define_fields: Dict[str, Any],
+    question: str = "",
+    api_key: str | None = None,
+) -> Dict[str, Any]:
     system_prompt = (
         "You are a Lean Six Sigma Black Belt coach. Return STRICT JSON only with keys: "
         "problem_feedback, define_feedback, rewrites, proposed_fields, tool_guidance, answer. "
@@ -72,7 +81,7 @@ def coach_define_phase(problem_statement: str, define_fields: Dict[str, Any], qu
         "define_fields": define_fields,
         "question": question,
     }
-    result = _call_ai_json(system_prompt, payload)
+    result = _call_ai_json(system_prompt, payload, api_key=api_key)
 
     result.setdefault("problem_feedback", {"score": 0, "strengths": [], "missing_components": [], "suggested_rewrite": "", "detected_context": "general"})
     result.setdefault("define_feedback", {"score": 0, "strengths": [], "improvements": []})
