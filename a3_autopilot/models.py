@@ -19,6 +19,9 @@ class GoalMetric(BaseModel):
     due_date: date
 class DefineInput(BaseModel):
     problem_statement: str
+    project_y: Optional[str] = None
+    goal_statement: Optional[str] = None
+    do_not_harm: Optional[str] = None
     business_impact: Optional[str] = None
     scope_in: str
     scope_out: str

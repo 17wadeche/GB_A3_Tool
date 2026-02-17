@@ -3,6 +3,9 @@ from a3_autopilot.models import DefineInput
 def generate_project_charter(define: DefineInput) -> dict[str, str]:
     return {
         "problem": define.problem_statement,
+        "project_y": define.project_y or "Not provided",
+        "goal_statement": define.goal_statement or "Not provided",
+        "do_not_harm": define.do_not_harm or "Not provided",
         "impact": define.business_impact or "Not provided",
         "scope_in": define.scope_in,
         "scope_out": define.scope_out,

@@ -1,4 +1,4 @@
-from a3_autopilot.problem_coach import EXAMPLE_PROBLEM_STATEMENT, evaluate_problem_statement
+from a3_autopilot.problem_coach import EXAMPLE_PROBLEM_STATEMENT, build_define_draft, evaluate_problem_statement
 
 
 def test_problem_statement_example_scores_high() -> None:
@@ -14,3 +14,13 @@ def test_problem_statement_coach_flags_gaps() -> None:
     assert feedback.score < 80
     assert any("time frame" in item.lower() for item in feedback.missing_components)
     assert any("measurable" in item.lower() for item in feedback.missing_components)
+
+
+def test_build_define_draft_prefills_fields() -> None:
+    draft = build_define_draft(EXAMPLE_PROBLEM_STATEMENT)
+
+    assert draft.project_y
+    assert draft.goal_statement
+    assert draft.do_not_harm
+    assert draft.goal_metric
+    assert draft.target > 0

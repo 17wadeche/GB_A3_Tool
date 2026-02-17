@@ -38,10 +38,13 @@ def _build_section_text(pkg: DmaicPackage) -> dict[str, str]:
     define_text = (
         "DEFINE: Describe the Problem\n"
         f"Problem Statement:\n{pkg.define.problem_statement}\n\n"
+        f"Project Y:\n{pkg.define.project_y or 'Not provided'}\n\n"
+        f"Goal Statement:\n{pkg.define.goal_statement or 'Not provided'}\n\n"
+        f"Do Not Harm:\n{pkg.define.do_not_harm or 'Not provided'}\n\n"
         f"Business Impact:\n{pkg.define.business_impact or 'Not provided'}\n\n"
         f"Scope In: {pkg.define.scope_in}\n"
         f"Scope Out: {pkg.define.scope_out}\n\n"
-        f"Goal:\n{goal}\n"
+        f"Goal Metric:\n{goal}\n"
         f"Team: {', '.join([f'{m.name} ({m.role})' for m in pkg.define.team])}"
     )
     measure_text = (

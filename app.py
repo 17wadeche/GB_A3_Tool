@@ -8,20 +8,40 @@ import streamlit as st
 from a3_autopilot.dmaic import orchestrate_dmaic
 from a3_autopilot.ingestion import load_dataset
 from a3_autopilot.models import DefineInput, GoalMetric, MeasureInput, TeamMember
-from a3_autopilot.problem_coach import EXAMPLE_PROBLEM_STATEMENT, evaluate_problem_statement
+from a3_autopilot.problem_coach import EXAMPLE_PROBLEM_STATEMENT, build_define_draft, evaluate_problem_statement
 from a3_autopilot.scoring import quality_gate
 from a3_autopilot.slide_builder import render_single_slide
 from a3_autopilot.utils import model_dump_compat, to_date_or_default
+
+
+def _init_state() -> None:
+    defaults = {
+        "problem_statement_input": "",
+        "project_y": "",
+        "goal_statement": "",
+        "do_not_harm": "",
+        "business_impact": "",
+        "scope_in": "",
+        "scope_out": "",
+        "goal_metric": "",
+        "target": 0.0,
+        "baseline": 0.0,
+        "team_raw": "",
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
 
 def render_app() -> None:
     st.set_page_config(page_title="A3 Autopilot", layout="wide")
     st.title("A3 Autopilot")
     st.caption("A guided DMAIC coach that walks users step-by-step and builds a one-slide A3 export.")
+    _init_state()
 
     st.info(
-        "1) Draft a strong problem statement. 2) Ask AI Coach to review it. "
-        "3) Complete the form and generate the full A3 package."
+        "1) Draft a strong problem statement. 2) Ask AI Coach to review it and pre-fill Define fields. "
+        "3) Review/update and generate the full A3 package."
     )
 
     sections = st.tabs(["A) Define", "B) Measure", "C) Analyze", "D) Improve", "E) Control"]
@@ -31,38 +51,47 @@ def render_app() -> None:
             problem_statement = st.text_area(
                 "Problem statement *",
                 key="problem_statement_input",
-                placeholder=(
-                    "Describe the issue with a clear time period, measurable gap, and business/regulatory impact."
-                ),
+                placeholder="Describe the issue with a time period, measurable gap, and impact.",
                 height=140,
             )
-            st.markdown("**Solid Medtronic complaint-handling example:**")
+            st.markdown("**Example**")
             st.caption(EXAMPLE_PROBLEM_STATEMENT)
 
+            project_y = st.text_input("Project Y", key="project_y", placeholder="Primary Y/output this project improves")
+            goal_statement = st.text_area(
+                "Goal",
+                key="goal_statement",
+                placeholder="SMART goal statement for this project",
+                height=80,
+            )
+            do_not_harm = st.text_area(
+                "Do not harm",
+                key="do_not_harm",
+                placeholder="Guardrails that must not be compromised",
+                height=80,
+            )
             business_impact = st.text_area(
                 "Business impact",
+                key="business_impact",
                 placeholder="Explain compliance, quality, operational, or patient impact.",
                 height=90,
             )
 
             c1, c2 = st.columns(2)
             with c1:
-                scope_in = st.text_input("Scope in", placeholder="Complaint intake through quality review")
-                goal_metric = st.text_input(
-                    "Goal metric",
-                    placeholder="First-pass complete complaint records (%)",
-                )
-                target = st.number_input("Target", min_value=0.0, value=0.0, step=0.5)
+                scope_in = st.text_input("Scope in", key="scope_in", placeholder="Complaint intake through quality review")
+                goal_metric = st.text_input("Goal metric", key="goal_metric", placeholder="First-pass complete complaint records (%)")
+                target = st.number_input("Target", min_value=0.0, key="target", step=0.5)
             with c2:
-                scope_out = st.text_input("Scope out", placeholder="Post-triage CAPA execution")
+                scope_out = st.text_input("Scope out", key="scope_out", placeholder="Post-triage CAPA execution")
                 due_date = st.date_input("Due date", value=date.today() + timedelta(days=60))
-                baseline = st.number_input("Baseline", min_value=0.0, value=0.0, step=0.5)
+                baseline = st.number_input("Baseline", min_value=0.0, key="baseline", step=0.5)
 
             team_raw = st.text_area(
                 "Team members (Name:Role per line)",
+                key="team_raw",
                 placeholder="Jane Smith:Quality Manager\nA. Lee:Complaint Analyst",
             )
-            st.caption("Tip: Include at least a process owner and an analyst.")
 
         with sections[1]:
             st.subheader("Step 2: Add data (optional but recommended)")
@@ -81,22 +110,32 @@ def render_app() -> None:
             st.subheader("Step 5: Control")
             st.markdown("Control plan and RACI are auto-generated with owner, due date, KPI, and control method.")
 
-        coach_clicked = st.form_submit_button("Ask AI Coach to review problem statement")
+        coach_clicked = st.form_submit_button("Ask AI Coach")
         submitted = st.form_submit_button("Generate complete DMAIC A3")
 
     if coach_clicked:
         feedback = evaluate_problem_statement(problem_statement)
+        draft = build_define_draft(problem_statement)
+
+        st.session_state["project_y"] = draft.project_y
+        st.session_state["goal_statement"] = draft.goal_statement
+        st.session_state["do_not_harm"] = draft.do_not_harm
+        st.session_state["business_impact"] = draft.business_impact
+        st.session_state["scope_in"] = draft.scope_in
+        st.session_state["scope_out"] = draft.scope_out
+        st.session_state["goal_metric"] = draft.goal_metric
+        st.session_state["baseline"] = float(draft.baseline)
+        st.session_state["target"] = float(draft.target)
+
         st.subheader("AI Coach feedback")
         st.metric("Problem statement quality", f"{feedback.score}/100")
-
         if feedback.strengths:
             st.success("Strong components detected")
             st.write(feedback.strengths)
-
         if feedback.missing_components:
             st.warning("Missing or weak components")
             st.write(feedback.missing_components)
-
+        st.info("Define fields have been pre-filled from your problem statement. Review and edit as needed.")
         st.info(f"Suggested rewrite template: {feedback.suggested_rewrite}")
 
     if not submitted:
@@ -114,6 +153,9 @@ def render_app() -> None:
 
     define = DefineInput(
         problem_statement=problem_statement.strip(),
+        project_y=project_y or None,
+        goal_statement=goal_statement or None,
+        do_not_harm=do_not_harm or None,
         business_impact=business_impact or None,
         scope_in=scope_in,
         scope_out=scope_out,
@@ -147,10 +189,7 @@ def render_app() -> None:
     passed, issues = quality_gate(pkg)
 
     st.subheader("Quality Gate")
-    if passed:
-        st.success("PASS: export requirements met.")
-    else:
-        st.error(f"FAIL: {issues}")
+    st.success("PASS: export requirements met.") if passed else st.error(f"FAIL: {issues}")
 
     output_pptx = render_single_slide(pkg, Path("examples") / "sample_a3_single_slide.pptx")
     st.subheader("Autopilot Results")
@@ -158,11 +197,6 @@ def render_app() -> None:
     c1.metric("Confidence", f"{pkg.confidence_score:.2f}")
     c2.metric("Root causes", len(pkg.root_causes))
     c3.metric("Countermeasures", len(pkg.countermeasures))
-
-    st.write("**Assumptions**", [a.text for a in pkg.assumptions] or ["None"])
-    st.write("**Confidence improvement data needed**", pkg.confidence_notes)
-    st.write("**Primary countermeasure**", [c.description for c in pkg.countermeasures if c.is_primary][:1])
-    st.write("**Backup countermeasure**", [c.description for c in pkg.countermeasures if c.is_backup][:1])
 
     with open(output_pptx, "rb") as f:
         st.download_button(
@@ -174,12 +208,6 @@ def render_app() -> None:
 
     if pkg.pareto_chart_path:
         st.image(pkg.pareto_chart_path, caption="Pareto chart")
-
-    with st.expander("DMAIC narrative"):
-        st.json(pkg.dmaic_narrative)
-
-    with st.expander("Traceability graph"):
-        st.json(pkg.traceability_graph)
 
     with st.expander("Raw package"):
         st.json(
