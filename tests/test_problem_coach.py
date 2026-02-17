@@ -1,5 +1,6 @@
 from a3_autopilot.problem_coach import (
     EXAMPLE_PROBLEM_STATEMENT,
+    assess_define_section,
     build_define_draft,
     detect_context,
     evaluate_problem_statement,
@@ -47,7 +48,7 @@ def test_general_problem_uses_general_context() -> None:
     feedback = evaluate_problem_statement(statement)
     assert feedback.detected_context == "general"
     draft = build_define_draft(statement)
-    assert "Workflow" in draft.project_y or "workflow" in draft.project_y.lower()
+    assert "Process" in draft.project_y or "workflow" in draft.project_y.lower()
 
 
 def test_a3_problem_prefill_is_a3_specific() -> None:
@@ -59,3 +60,21 @@ def test_a3_problem_prefill_is_a3_specific() -> None:
 
     assert "A3" in draft.project_y
     assert "A3 completion rate" in draft.goal_metric
+
+
+def test_assess_define_section_scores_completion() -> None:
+    feedback = assess_define_section(
+        problem_statement="Our process is slow and causes missed deadlines.",
+        project_y="",
+        goal_statement="",
+        do_not_harm="",
+        business_impact="",
+        scope_in="",
+        scope_out="",
+        goal_metric="",
+        baseline=0,
+        target=0,
+    )
+
+    assert feedback.score < 50
+    assert feedback.improvements

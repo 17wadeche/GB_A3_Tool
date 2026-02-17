@@ -31,6 +31,13 @@ class DefineDraft:
     due_date: date
 
 
+@dataclass
+class DefineSectionFeedback:
+    strengths: List[str]
+    improvements: List[str]
+    score: int
+
+
 EXAMPLE_PROBLEM_STATEMENT = (
     "Between January and March 2026, the Medtronic Cardiac Rhythm Management complaint intake "
     "process at the Mounds View site logged 148 complaint records with 34% missing mandatory "
@@ -59,15 +66,7 @@ def _split_sentences(text: str) -> List[str]:
 
 def detect_context(statement: str) -> ContextType:
     lowered = (statement or "").lower()
-    complaint_keywords = [
-        "complaint",
-        "mdr",
-        "regulatory",
-        "triage",
-        "post-market",
-        "vigilance",
-        "adverse event",
-    ]
+    complaint_keywords = ["complaint", "mdr", "regulatory", "triage", "post-market", "vigilance", "adverse event"]
     return "complaint_handling" if _contains_any(lowered, complaint_keywords) else "general"
 
 
@@ -84,13 +83,11 @@ def build_define_draft(statement: str) -> DefineDraft:
         goal_metric = "First-pass complete complaint records (%)"
         baseline = 100.0 - percent if percent is not None else 70.0
         target = min(99.0, baseline + 15.0)
-
         if "delay" in lowered and days is not None:
             project_y = "Complaint Intake to Regulatory Triage Lead Time"
             goal_metric = "Average complaint triage lead time (days)"
             baseline = days
             target = max(0.5, round(days * 0.5, 2))
-
         business_impact = (
             "Delayed or incomplete complaint handling increases compliance risk, slows response time, "
             "and can impact patient and audit outcomes."
@@ -98,35 +95,32 @@ def build_define_draft(statement: str) -> DefineDraft:
         scope_in = "Complaint intake, data entry, and quality review"
         scope_out = "CAPA implementation and post-market trend governance"
         do_not_harm = "Do not reduce complaint quality, regulatory compliance, or patient safety while improving speed."
+    elif "a3" in lowered:
+        project_y = "A3 Completion Rate and Process Simplicity"
+        goal_metric = "A3 completion rate (%)"
+        baseline = percent if percent is not None else 60.0
+        target = min(95.0, baseline + 20.0)
+        business_impact = (
+            "An overly complex A3 process drives extra work and frustration, lowers completion rates, "
+            "and reduces confidence in continuous-improvement execution."
+        )
+        scope_in = "A3 initiation, coaching touchpoints, and completion workflow"
+        scope_out = "Non-A3 training programs and unrelated enterprise initiatives"
+        do_not_harm = "Do not reduce coaching quality or problem-solving rigor while simplifying A3 execution."
     else:
-        if "a3" in lowered:
-            project_y = "A3 Completion Rate and Process Simplicity"
-            goal_metric = "A3 completion rate (%)"
-            baseline = percent if percent is not None else 60.0
-            target = min(95.0, baseline + 20.0)
-            business_impact = (
-                "An overly complex A3 process drives extra work and frustration, lowers completion rates, "
-                "and reduces confidence in continuous-improvement execution."
-            )
-            scope_in = "A3 initiation, coaching touchpoints, and completion workflow"
-            scope_out = "Non-A3 training programs and unrelated enterprise initiatives"
-            do_not_harm = "Do not reduce coaching quality or problem-solving rigor while simplifying A3 execution."
-        else:
-            project_y = "Workflow Throughput and On-Time Completion"
-            goal_metric = "On-time completion rate (%)"
-            baseline = percent if percent is not None else 65.0
-            target = min(98.0, baseline + 20.0)
-            business_impact = (
-                "Work execution friction drives delays, rework, missed commitments, and reduced team productivity."
-            )
-            scope_in = "Work intake, prioritization, handoffs, and execution"
-            scope_out = "Strategic planning and long-range portfolio decisions"
-            do_not_harm = "Do not increase burnout, defect rates, or customer impact while improving speed."
+        project_y = "Process Effectiveness and On-Time Execution"
+        goal_metric = "On-time completion rate (%)"
+        baseline = percent if percent is not None else 65.0
+        target = min(98.0, baseline + 20.0)
+        business_impact = "Execution friction drives delays, rework, missed commitments, and reduced team productivity."
+        scope_in = "Work intake, prioritization, handoffs, and execution"
+        scope_out = "Strategic planning and long-range portfolio decisions"
+        do_not_harm = "Do not increase burnout, defect rates, or customer impact while improving speed."
 
-        if "delay" in lowered and days is not None:
-            goal_metric = "Average task completion lead time (days)"
-            baseline = days
-            target = max(0.5, round(days * 0.6, 2))
+    if days is not None and "delay" in lowered:
+        goal_metric = "Average task completion lead time (days)" if context == "general" else goal_metric
+        baseline = days
+        target = max(0.5, round(days * 0.6, 2)) if context == "general" else target
 
     return DefineDraft(
         project_y=project_y,
@@ -140,6 +134,70 @@ def build_define_draft(statement: str) -> DefineDraft:
         target=target,
         due_date=due,
     )
+
+
+def assess_define_section(
+    problem_statement: str,
+    project_y: str,
+    goal_statement: str,
+    do_not_harm: str,
+    business_impact: str,
+    scope_in: str,
+    scope_out: str,
+    goal_metric: str,
+    baseline: float,
+    target: float,
+) -> DefineSectionFeedback:
+    strengths: List[str] = []
+    improvements: List[str] = []
+
+    if project_y.strip():
+        strengths.append("Project Y is filled in.")
+    else:
+        improvements.append("Add Project Y (the primary output you are improving).")
+
+    if goal_statement.strip():
+        strengths.append("Goal statement is present.")
+    else:
+        improvements.append("Add a SMART goal statement with baseline, target, and due date.")
+
+    if do_not_harm.strip():
+        strengths.append("Do not harm guardrail is defined.")
+    else:
+        improvements.append("Add a 'Do not harm' guardrail to protect quality/safety/customer outcomes.")
+
+    if business_impact.strip():
+        strengths.append("Business impact is described.")
+    else:
+        improvements.append("Describe business impact (cost, delivery, quality, compliance, or productivity).")
+
+    if scope_in.strip() and scope_out.strip():
+        strengths.append("Scope boundaries are defined.")
+    else:
+        improvements.append("Fill both scope in and scope out to clarify boundaries.")
+
+    if goal_metric.strip():
+        strengths.append("Goal metric is provided.")
+    else:
+        improvements.append("Specify a goal metric (rate, time, defects, or completion).")
+
+    if baseline > 0 and target > 0:
+        strengths.append("Baseline and target are both numeric and non-zero.")
+    else:
+        improvements.append("Provide non-zero baseline and target values.")
+
+    if baseline > 0 and target > 0 and baseline != target:
+        strengths.append("Baseline and target show a clear improvement gap.")
+    elif baseline > 0 and target > 0:
+        improvements.append("Set target to be meaningfully different from baseline.")
+
+    text = (problem_statement or "").lower()
+    if goal_metric and not _contains_any(text, ["%", "rate", "day", "days", "time", "defect", "completion"]):
+        improvements.append("Problem statement could include measurable language aligned to your goal metric.")
+
+    total_checks = 8
+    score = max(0, min(100, int((len(strengths) / total_checks) * 100)))
+    return DefineSectionFeedback(strengths=strengths, improvements=improvements, score=score)
 
 
 def rewrite_problem_statement(statement: str) -> str:
@@ -191,23 +249,14 @@ def evaluate_problem_statement(statement: str) -> ProblemStatementFeedback:
     strengths: List[str] = []
     missing: List[str] = []
 
-    has_where = _contains_any(lowered, ["medtronic", "site", "plant", "department", "process", "team", "workflow", "a3"])
+    has_where = _contains_any(lowered, ["site", "department", "process", "team", "workflow", "a3", "line"])
     has_when = _contains_any(
         lowered,
         ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december", "week", "month", "quarter", "q1", "q2", "q3", "q4", "202"],
     )
-    has_what = _contains_any(
-        lowered,
-        ["complaint", "nonconformance", "defect", "error", "delay", "difficult", "slow", "complex", "burdensome", "frustration"],
-    )
-    has_magnitude = _contains_any(
-        lowered,
-        ["%", "percent", "days", "hours", "records", "cases", "incidents", "count", "rate"],
-    )
-    has_impact = _contains_any(
-        lowered,
-        ["risk", "impact", "cost", "delay", "regulatory", "patient", "mdr", "compliance", "rework", "productivity", "missed", "frustration", "completion"],
-    )
+    has_what = _contains_any(lowered, ["complaint", "defect", "error", "delay", "difficult", "slow", "complex", "burdensome", "frustration"])
+    has_magnitude = _contains_any(lowered, ["%", "percent", "days", "hours", "records", "count", "rate", "number"])
+    has_impact = _contains_any(lowered, ["risk", "impact", "cost", "delay", "rework", "productivity", "missed", "frustration", "completion", "quality"])
 
     if len(text.split()) >= 20:
         strengths.append("Statement is detailed enough to understand context.")
@@ -241,15 +290,14 @@ def evaluate_problem_statement(statement: str) -> ProblemStatementFeedback:
 
     score = max(0, min(100, int((len(strengths) / 6) * 100)))
 
+    rewrite_template = (
+        "From [time period], in [team/process], [issue] occurs at [measured magnitude], "
+        "resulting in [delivery/quality/cost/compliance/productivity impact]."
+    )
     if context == "complaint_handling":
         rewrite_template = (
             "From [time period], in [complaint process/site], [complaint issue] occurs at [measured magnitude], "
             "resulting in [regulatory/patient/business impact]."
-        )
-    else:
-        rewrite_template = (
-            "From [time period], in [team/process], [workflow issue] occurs at [measured magnitude], "
-            "resulting in [delivery/quality/cost/productivity impact]."
         )
 
     return ProblemStatementFeedback(
