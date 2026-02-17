@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import List, Literal
+from typing import Dict, List, Literal
 
 ContextType = Literal["complaint_handling", "general"]
 
@@ -38,12 +38,12 @@ class DefineSectionFeedback:
     score: int
 
 
-EXAMPLE_PROBLEM_STATEMENT = (
-    "Between January and March 2026, the Medtronic Cardiac Rhythm Management complaint intake "
-    "process at the Mounds View site logged 148 complaint records with 34% missing mandatory "
-    "fields at first pass, causing an average 2.1-day delay in regulatory triage and increasing "
-    "risk of late MDR submission."
-)
+@dataclass
+class LeanToolGuidance:
+    tool_name: str
+    when_to_use: str
+    output_expected: str
+    starter_prompt: str
 
 
 def _contains_any(text: str, keywords: List[str]) -> bool:
@@ -95,32 +95,30 @@ def build_define_draft(statement: str) -> DefineDraft:
         scope_in = "Complaint intake, data entry, and quality review"
         scope_out = "CAPA implementation and post-market trend governance"
         do_not_harm = "Do not reduce complaint quality, regulatory compliance, or patient safety while improving speed."
-    elif "a3" in lowered:
-        project_y = "A3 Completion Rate and Process Simplicity"
-        goal_metric = "A3 completion rate (%)"
-        baseline = percent if percent is not None else 60.0
-        target = min(95.0, baseline + 20.0)
-        business_impact = (
-            "An overly complex A3 process drives extra work and frustration, lowers completion rates, "
-            "and reduces confidence in continuous-improvement execution."
-        )
-        scope_in = "A3 initiation, coaching touchpoints, and completion workflow"
-        scope_out = "Non-A3 training programs and unrelated enterprise initiatives"
-        do_not_harm = "Do not reduce coaching quality or problem-solving rigor while simplifying A3 execution."
     else:
         project_y = "Process Effectiveness and On-Time Execution"
         goal_metric = "On-time completion rate (%)"
         baseline = percent if percent is not None else 65.0
         target = min(98.0, baseline + 20.0)
         business_impact = "Execution friction drives delays, rework, missed commitments, and reduced team productivity."
-        scope_in = "Work intake, prioritization, handoffs, and execution"
-        scope_out = "Strategic planning and long-range portfolio decisions"
-        do_not_harm = "Do not increase burnout, defect rates, or customer impact while improving speed."
+        scope_in = "Process intake, handoffs, and execution"
+        scope_out = "Out-of-scope upstream/downstream systems not controlled by this team"
+        do_not_harm = "Do not increase burnout, defect rates, customer impact, or compliance risk while improving speed."
 
-    if days is not None and "delay" in lowered:
-        goal_metric = "Average task completion lead time (days)" if context == "general" else goal_metric
-        baseline = days
-        target = max(0.5, round(days * 0.6, 2)) if context == "general" else target
+        if "a3" in lowered:
+            project_y = "A3 Process Effectiveness"
+            goal_metric = "A3 completion rate (%)"
+            baseline = percent if percent is not None else 60.0
+            target = min(95.0, baseline + 20.0)
+            business_impact = "A complex A3 process lowers adoption, completion, and quality of problem-solving outcomes."
+            scope_in = "A3 workflow from kickoff through approval"
+            scope_out = "Non-A3 methods and unrelated training programs"
+            do_not_harm = "Do not reduce rigor, coaching quality, or learning depth while simplifying the process."
+
+        if days is not None and "delay" in lowered:
+            goal_metric = "Average cycle time (days)"
+            baseline = days
+            target = max(0.5, round(days * 0.6, 2))
 
     return DefineDraft(
         project_y=project_y,
@@ -152,9 +150,9 @@ def assess_define_section(
     improvements: List[str] = []
 
     if project_y.strip():
-        strengths.append("Project Y is filled in.")
+        strengths.append("Project Y is defined.")
     else:
-        improvements.append("Add Project Y (the primary output you are improving).")
+        improvements.append("Add Project Y (primary output variable being improved).")
 
     if goal_statement.strip():
         strengths.append("Goal statement is present.")
@@ -162,53 +160,46 @@ def assess_define_section(
         improvements.append("Add a SMART goal statement with baseline, target, and due date.")
 
     if do_not_harm.strip():
-        strengths.append("Do not harm guardrail is defined.")
+        strengths.append("Do-not-harm guardrails are defined.")
     else:
-        improvements.append("Add a 'Do not harm' guardrail to protect quality/safety/customer outcomes.")
+        improvements.append("Add do-not-harm constraints to protect quality, safety, and customer impact.")
 
     if business_impact.strip():
         strengths.append("Business impact is described.")
     else:
-        improvements.append("Describe business impact (cost, delivery, quality, compliance, or productivity).")
+        improvements.append("Describe business impact (delivery, quality, cost, safety, compliance, productivity).")
 
     if scope_in.strip() and scope_out.strip():
-        strengths.append("Scope boundaries are defined.")
+        strengths.append("Scope in and scope out are both defined.")
     else:
-        improvements.append("Fill both scope in and scope out to clarify boundaries.")
+        improvements.append("Define both scope in and scope out boundaries.")
 
     if goal_metric.strip():
-        strengths.append("Goal metric is provided.")
+        strengths.append("Goal metric is specified.")
     else:
-        improvements.append("Specify a goal metric (rate, time, defects, or completion).")
+        improvements.append("Define a measurable goal metric.")
 
     if baseline > 0 and target > 0:
-        strengths.append("Baseline and target are both numeric and non-zero.")
+        strengths.append("Baseline and target values are numeric and non-zero.")
+        if baseline != target:
+            strengths.append("Baseline and target indicate a measurable gap.")
+        else:
+            improvements.append("Set target different from baseline to reflect improvement.")
     else:
         improvements.append("Provide non-zero baseline and target values.")
 
-    if baseline > 0 and target > 0 and baseline != target:
-        strengths.append("Baseline and target show a clear improvement gap.")
-    elif baseline > 0 and target > 0:
-        improvements.append("Set target to be meaningfully different from baseline.")
-
-    text = (problem_statement or "").lower()
-    if goal_metric and not _contains_any(text, ["%", "rate", "day", "days", "time", "defect", "completion"]):
-        improvements.append("Problem statement could include measurable language aligned to your goal metric.")
-
-    total_checks = 8
-    score = max(0, min(100, int((len(strengths) / total_checks) * 100)))
+    score = max(0, min(100, int((len(strengths) / 8) * 100)))
     return DefineSectionFeedback(strengths=strengths, improvements=improvements, score=score)
 
 
 def rewrite_problem_statement(statement: str) -> str:
     text = (statement or "").strip()
     if not text:
-        return EXAMPLE_PROBLEM_STATEMENT
+        return "From [time period], in [process], [issue] occurs at [measured magnitude], resulting in [impact]."
 
     lowered = text.lower()
     context = detect_context(text)
     sentences = _split_sentences(text)
-
     issue_sentence = sentences[0].rstrip(".") if sentences else text.rstrip(".")
     impact_sentence = sentences[1].rstrip(".") if len(sentences) > 1 else ""
     impact_sentence = re.sub(r"^(this|it)\s+(leads to|results in|causes)\s+", "", impact_sentence, flags=re.IGNORECASE)
@@ -221,7 +212,7 @@ def rewrite_problem_statement(statement: str) -> str:
 
     percent = _extract_percent(text)
     days = _extract_days(text)
-    evidence = "frequent delays and extra work"
+    evidence = "frequent variation and delays"
     if percent is not None:
         evidence = f"a measurable gap of {percent:.1f}%"
     elif days is not None:
@@ -229,16 +220,42 @@ def rewrite_problem_statement(statement: str) -> str:
 
     if context == "complaint_handling":
         location = "in the complaint handling workflow"
-        default_impact = "higher compliance risk, slower triage, and potential patient impact"
-    elif "a3" in lowered:
-        location = "in the current A3 workflow"
-        default_impact = "lower A3 completion rates and reduced value from the A3 method"
+        default_impact = "increased compliance risk, slower triage, and potential patient impact"
     else:
-        location = "in the current team workflow"
-        default_impact = "missed commitments, rework, and reduced productivity"
+        location = "in the current process"
+        default_impact = "missed commitments, rework, and reduced performance"
 
     impact = impact_sentence if impact_sentence else default_impact
     return f"{timeframe}, {location}, {issue_sentence}. Evidence includes {evidence}. This results in {impact}."
+
+
+def rewrite_define_fields(fields: Dict[str, str]) -> Dict[str, str]:
+    rewrites: Dict[str, str] = {}
+    problem = fields.get("problem_statement", "")
+    if problem.strip():
+        rewrites["problem_statement"] = rewrite_problem_statement(problem)
+
+    if fields.get("project_y", "").strip():
+        rewrites["project_y"] = f"Primary output (Y): {fields['project_y'].strip()}"
+
+    if fields.get("goal_statement", "").strip():
+        gs = fields["goal_statement"].strip().rstrip(".")
+        rewrites["goal_statement"] = f"SMART Goal: {gs}."
+
+    if fields.get("do_not_harm", "").strip():
+        rewrites["do_not_harm"] = f"Constraint: {fields['do_not_harm'].strip().rstrip('.')}"
+
+    if fields.get("business_impact", "").strip():
+        rewrites["business_impact"] = f"Business impact: {fields['business_impact'].strip().rstrip('.')}"
+
+    if fields.get("scope_in", "").strip():
+        rewrites["scope_in"] = f"In scope: {fields['scope_in'].strip()}"
+    if fields.get("scope_out", "").strip():
+        rewrites["scope_out"] = f"Out of scope: {fields['scope_out'].strip()}"
+    if fields.get("goal_metric", "").strip():
+        rewrites["goal_metric"] = f"Primary metric: {fields['goal_metric'].strip()}"
+
+    return rewrites
 
 
 def evaluate_problem_statement(statement: str) -> ProblemStatementFeedback:
@@ -249,14 +266,14 @@ def evaluate_problem_statement(statement: str) -> ProblemStatementFeedback:
     strengths: List[str] = []
     missing: List[str] = []
 
-    has_where = _contains_any(lowered, ["site", "department", "process", "team", "workflow", "a3", "line"])
+    has_where = _contains_any(lowered, ["site", "department", "process", "team", "workflow", "line", "function"])
     has_when = _contains_any(
         lowered,
         ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december", "week", "month", "quarter", "q1", "q2", "q3", "q4", "202"],
     )
-    has_what = _contains_any(lowered, ["complaint", "defect", "error", "delay", "difficult", "slow", "complex", "burdensome", "frustration"])
+    has_what = _contains_any(lowered, ["complaint", "defect", "error", "delay", "difficult", "slow", "complex", "burdensome", "variation", "waste"])
     has_magnitude = _contains_any(lowered, ["%", "percent", "days", "hours", "records", "count", "rate", "number"])
-    has_impact = _contains_any(lowered, ["risk", "impact", "cost", "delay", "rework", "productivity", "missed", "frustration", "completion", "quality"])
+    has_impact = _contains_any(lowered, ["risk", "impact", "cost", "delay", "rework", "productivity", "missed", "quality", "safety", "compliance"])
 
     if len(text.split()) >= 20:
         strengths.append("Statement is detailed enough to understand context.")
@@ -264,14 +281,14 @@ def evaluate_problem_statement(statement: str) -> ProblemStatementFeedback:
         missing.append("Add more detail (aim for at least 20 words).")
 
     if has_where:
-        strengths.append("Includes process/organization context (where the issue happens).")
+        strengths.append("Includes process/organization context.")
     else:
-        missing.append("Specify where the problem occurs (team, process, product line, or site).")
+        missing.append("Specify where the problem occurs (process/team/function).")
 
     if has_when:
         strengths.append("Includes a time window or period.")
     else:
-        missing.append("Add a clear time frame (for example, Jan-Mar 2026 or Q1 2026).")
+        missing.append("Add a clear time frame (month/quarter/date range).")
 
     if has_what:
         strengths.append("Clearly names the core issue.")
@@ -279,20 +296,19 @@ def evaluate_problem_statement(statement: str) -> ProblemStatementFeedback:
         missing.append("Name the core issue explicitly.")
 
     if has_magnitude:
-        strengths.append("Contains measurable magnitude (count, rate, or time).")
+        strengths.append("Contains measurable magnitude.")
     else:
-        missing.append("Add measurable data such as %, count, rate, or delay duration.")
+        missing.append("Add measurable data such as %, count, rate, or cycle time.")
 
     if has_impact:
-        strengths.append("States why the issue matters (impact).")
+        strengths.append("States why the issue matters.")
     else:
-        missing.append("Explain the impact (compliance, cost, delay, quality, or productivity).")
+        missing.append("Explain impact (delivery, quality, cost, safety, compliance, productivity).")
 
     score = max(0, min(100, int((len(strengths) / 6) * 100)))
-
     rewrite_template = (
         "From [time period], in [team/process], [issue] occurs at [measured magnitude], "
-        "resulting in [delivery/quality/cost/compliance/productivity impact]."
+        "resulting in [delivery/quality/cost/safety/compliance impact]."
     )
     if context == "complaint_handling":
         rewrite_template = (
@@ -304,6 +320,62 @@ def evaluate_problem_statement(statement: str) -> ProblemStatementFeedback:
         score=score,
         strengths=strengths,
         missing_components=missing,
-        suggested_rewrite=rewrite_template if text else EXAMPLE_PROBLEM_STATEMENT,
+        suggested_rewrite=rewrite_template,
         detected_context=context,
     )
+
+
+def generate_lean_tool_guidance(problem_statement: str) -> List[LeanToolGuidance]:
+    context = detect_context(problem_statement)
+    focus = "complaint handling flow" if context == "complaint_handling" else "end-to-end process flow"
+
+    return [
+        LeanToolGuidance(
+            tool_name="VOC + CTQ Tree",
+            when_to_use="Define phase to translate stakeholder/customer needs into measurable CTQs.",
+            output_expected="Prioritized VOC themes, CTQ requirements, and measurable specs.",
+            starter_prompt=f"Build a VOC-to-CTQ tree for the {focus}. Include top 5 needs and CTQ metrics.",
+        ),
+        LeanToolGuidance(
+            tool_name="SIPOC + High-Level Process Map",
+            when_to_use="Early Define/Measure to align scope, suppliers, inputs, process, outputs, customers.",
+            output_expected="One-page SIPOC and 6-10 step process map with handoffs.",
+            starter_prompt=f"Create a SIPOC and high-level process map for the {focus}.",
+        ),
+        LeanToolGuidance(
+            tool_name="Value Stream Mapping (Current/Future State)",
+            when_to_use="Measure/Analyze to identify wait time, rework loops, bottlenecks, and flow losses.",
+            output_expected="Current-state VSM with cycle/lead times and a future-state VSM with kaizen bursts.",
+            starter_prompt="Draft current and future-state VSM including takt time, cycle time, queue time, and bottlenecks.",
+        ),
+        LeanToolGuidance(
+            tool_name="Process Mapping (Swimlane)",
+            when_to_use="Analyze to identify role-based handoff failures and unclear ownership.",
+            output_expected="Swimlane map with decision points, rework loops, and ownership clarity.",
+            starter_prompt="Create a swimlane process map and highlight non-value-added steps and rework loops.",
+        ),
+        LeanToolGuidance(
+            tool_name="MSA + Capability + Control Plan",
+            when_to_use="Measure/Control for metric reliability and sustainment of gains.",
+            output_expected="MSA summary, capability view (Cp/Cpk/Ppk where relevant), and control response plan.",
+            starter_prompt="Generate an MSA checklist, capability analysis plan, and control plan for key CTQ metrics.",
+        ),
+    ]
+
+
+def answer_coaching_question(question: str, define_snapshot: Dict[str, str]) -> str:
+    q = (question or "").strip().lower()
+    if not q:
+        return "Ask a specific Lean Six Sigma/DMAIC question and I will coach you with actionable steps."
+
+    if "voc" in q:
+        return "VOC captures stakeholder voice (pain points, needs, expectations). Convert VOC to CTQs by making each need measurable (metric + spec + owner + review cadence)."
+    if "value stream" in q or "vsm" in q:
+        return "Start with a current-state VSM: process steps, cycle time, wait time, queue, rework. Then build future-state VSM by removing bottlenecks and adding pull/flow controls."
+    if "process map" in q or "swimlane" in q:
+        return "Use a swimlane map with roles, handoffs, and decisions. Mark rework loops, delays, and unclear ownership. Those become root-cause candidates."
+    if "goal" in q:
+        current_goal = define_snapshot.get("goal_statement", "").strip()
+        return f"A Black Belt-level goal should be SMART and CTQ-linked. Current goal: '{current_goal or 'Not provided'}'. Ensure baseline, target, due date, and business impact are explicit."
+
+    return "Use Define→Measure→Analyze→Improve→Control discipline: clarify CTQs, baseline capability, validate root causes, test countermeasures, then lock in controls with owner/cadence/response plan."

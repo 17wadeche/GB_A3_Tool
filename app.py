@@ -9,11 +9,12 @@ from a3_autopilot.dmaic import orchestrate_dmaic
 from a3_autopilot.ingestion import load_dataset
 from a3_autopilot.models import DefineInput, GoalMetric, MeasureInput, TeamMember
 from a3_autopilot.problem_coach import (
-    EXAMPLE_PROBLEM_STATEMENT,
+    answer_coaching_question,
     assess_define_section,
     build_define_draft,
     evaluate_problem_statement,
-    rewrite_problem_statement,
+    generate_lean_tool_guidance,
+    rewrite_define_fields,
 )
 from a3_autopilot.scoring import quality_gate
 from a3_autopilot.slide_builder import render_single_slide
@@ -31,18 +32,21 @@ WIDGET_DEFAULTS = {
     "target": 0.0,
     "baseline": 0.0,
     "team_raw": "",
+    "coach_question": "",
 }
 
 
 def _init_state() -> None:
-    if "coach_feedback" not in st.session_state:
-        st.session_state["coach_feedback"] = None
-    if "define_feedback" not in st.session_state:
-        st.session_state["define_feedback"] = None
-    if "coached_rewrite" not in st.session_state:
-        st.session_state["coached_rewrite"] = ""
-    if "prefill_notes" not in st.session_state:
-        st.session_state["prefill_notes"] = []
+    for key, default in {
+        "coach_feedback": None,
+        "define_feedback": None,
+        "coached_rewrites": {},
+        "prefill_notes": [],
+        "tool_guidance": [],
+        "coach_answer": "",
+    }.items():
+        if key not in st.session_state:
+            st.session_state[key] = default
 
     pending = st.session_state.pop("_pending_widget_updates", None)
     if isinstance(pending, dict):
@@ -61,66 +65,62 @@ def _text_empty(value: str) -> bool:
 def render_app() -> None:
     st.set_page_config(page_title="A3 Autopilot", layout="wide")
     st.title("A3 Autopilot")
-    st.caption("A guided DMAIC coach that walks users step-by-step and builds a one-slide A3 export.")
+    st.caption("Black Belt-style DMAIC coach with advanced Lean Six Sigma tooling support.")
     _init_state()
 
-    st.info(
-        "1) Draft a strong problem statement. 2) Ask AI Coach to review filled fields and only suggest/fill blanks. "
-        "3) Update anything you want, then generate the A3 package."
-    )
-
-    sections = st.tabs(["A) Define", "B) Measure", "C) Analyze", "D) Improve", "E) Control"])
+    sections = st.tabs(["A) Define", "B) Measure", "C) Analyze", "D) Improve", "E) Control", "F) Lean Tool Coach"])
     with st.form("dmaic_form"):
         with sections[0]:
-            st.subheader("Step 1: Define the problem")
+            st.subheader("Define")
             problem_statement = st.text_area(
                 "Problem statement *",
                 key="problem_statement_input",
-                placeholder="Describe the issue with a time period, measurable gap, and impact.",
+                placeholder="State the issue, measurable gap, timeframe, and business impact.",
                 height=140,
             )
-            st.markdown("**Example**")
-            st.caption(EXAMPLE_PROBLEM_STATEMENT)
 
-            project_y = st.text_input("Project Y", key="project_y", placeholder="Primary Y/output this project improves")
+            project_y = st.text_input("Project Y", key="project_y", placeholder="Primary output variable")
             goal_statement = st.text_area("Goal", key="goal_statement", placeholder="SMART goal statement", height=80)
-            do_not_harm = st.text_area("Do not harm", key="do_not_harm", placeholder="Guardrails", height=80)
-            business_impact = st.text_area("Business impact", key="business_impact", placeholder="Compliance / quality / patient impact", height=90)
+            do_not_harm = st.text_area("Do not harm", key="do_not_harm", placeholder="Guardrails / constraints", height=80)
+            business_impact = st.text_area("Business impact", key="business_impact", placeholder="Business case for improvement", height=90)
 
             c1, c2 = st.columns(2)
             with c1:
-                scope_in = st.text_input("Scope in", key="scope_in", placeholder="Process scope start")
-                goal_metric = st.text_input("Goal metric", key="goal_metric", placeholder="Primary metric")
+                scope_in = st.text_input("Scope in", key="scope_in", placeholder="What is in scope")
+                goal_metric = st.text_input("Goal metric", key="goal_metric", placeholder="Primary CTQ / KPI")
                 target = st.number_input("Target", min_value=0.0, key="target", step=0.5)
             with c2:
-                scope_out = st.text_input("Scope out", key="scope_out", placeholder="Process scope end")
+                scope_out = st.text_input("Scope out", key="scope_out", placeholder="What is out of scope")
                 due_date = st.date_input("Due date", value=date.today() + timedelta(days=60))
                 baseline = st.number_input("Baseline", min_value=0.0, key="baseline", step=0.5)
 
             team_raw = st.text_area(
                 "Team members (Name:Role per line)",
                 key="team_raw",
-                placeholder="Jane Smith:Quality Manager\nA. Lee:Analyst",
+                placeholder="Name:Role",
             )
 
         with sections[1]:
-            st.subheader("Step 2: Add data (optional but recommended)")
+            st.subheader("Measure")
             uploaded = st.file_uploader("Upload CSV/XLSX (optional)", type=["csv", "xlsx"])
 
         with sections[2]:
-            st.subheader("Step 3: Analyze")
-            st.markdown("Pareto, fishbone (6M), and 5 Whys are auto-generated.")
+            st.subheader("Analyze")
+            st.markdown("Pareto, fishbone (6M), and 5 Whys are auto-generated from inputs.")
 
         with sections[3]:
-            st.subheader("Step 4: Improve")
-            st.markdown("Countermeasures are scored on impact/effort/risk with primary and backup recommendations.")
+            st.subheader("Improve")
+            st.markdown("Countermeasures are scored on impact/effort/risk.")
 
         with sections[4]:
-            st.subheader("Step 5: Control")
-            st.markdown("Control plan and RACI are auto-generated with owner, due date, KPI, and control method.")
+            st.subheader("Control")
+            st.markdown("Control plan and RACI are generated with owner, KPI, and response plan.")
+
+        with sections[5]:
+            st.subheader("Lean Tool Coach")
+            st.markdown("Use this to guide advanced LSS tools: VOC, CTQ, SIPOC, VSM, process mapping, MSA, capability, and control plans.")
 
         coach_clicked = st.form_submit_button("Ask AI Coach")
-        use_rewrite_clicked = st.form_submit_button("Use coached rewrite")
         submitted = st.form_submit_button("Generate complete DMAIC A3")
 
     if coach_clicked:
@@ -138,58 +138,71 @@ def render_app() -> None:
             target,
         )
         draft = build_define_draft(problem_statement)
-        coached_rewrite = rewrite_problem_statement(problem_statement)
+        rewrites = rewrite_define_fields(
+            {
+                "problem_statement": problem_statement,
+                "project_y": project_y,
+                "goal_statement": goal_statement,
+                "do_not_harm": do_not_harm,
+                "business_impact": business_impact,
+                "scope_in": scope_in,
+                "scope_out": scope_out,
+                "goal_metric": goal_metric,
+            }
+        )
 
         updates: dict[str, str | float] = {}
         notes: list[str] = []
-
+        if _text_empty(problem_statement) and rewrites.get("problem_statement"):
+            updates["problem_statement_input"] = rewrites["problem_statement"]
+            notes.append("Filled Problem statement from AI coaching rewrite.")
         if _text_empty(project_y):
             updates["project_y"] = draft.project_y
-            notes.append("Filled Project Y from AI Coach draft.")
+            notes.append("Filled Project Y.")
         if _text_empty(goal_statement):
             updates["goal_statement"] = draft.goal_statement
-            notes.append("Filled Goal from AI Coach draft.")
+            notes.append("Filled Goal statement.")
         if _text_empty(do_not_harm):
             updates["do_not_harm"] = draft.do_not_harm
-            notes.append("Filled Do not harm from AI Coach draft.")
+            notes.append("Filled Do not harm.")
         if _text_empty(business_impact):
             updates["business_impact"] = draft.business_impact
-            notes.append("Filled Business impact from AI Coach draft.")
+            notes.append("Filled Business impact.")
         if _text_empty(scope_in):
             updates["scope_in"] = draft.scope_in
-            notes.append("Filled Scope in from AI Coach draft.")
+            notes.append("Filled Scope in.")
         if _text_empty(scope_out):
             updates["scope_out"] = draft.scope_out
-            notes.append("Filled Scope out from AI Coach draft.")
+            notes.append("Filled Scope out.")
         if _text_empty(goal_metric):
             updates["goal_metric"] = draft.goal_metric
-            notes.append("Filled Goal metric from AI Coach draft.")
+            notes.append("Filled Goal metric.")
         if baseline <= 0:
             updates["baseline"] = float(draft.baseline)
-            notes.append("Filled Baseline from AI Coach draft.")
+            notes.append("Filled Baseline.")
         if target <= 0:
             updates["target"] = float(draft.target)
-            notes.append("Filled Target from AI Coach draft.")
+            notes.append("Filled Target.")
 
         st.session_state["coach_feedback"] = feedback
         st.session_state["define_feedback"] = define_feedback
-        st.session_state["coached_rewrite"] = coached_rewrite
+        st.session_state["coached_rewrites"] = rewrites
         st.session_state["prefill_notes"] = notes
+        st.session_state["tool_guidance"] = generate_lean_tool_guidance(problem_statement)
 
         if updates:
             st.session_state["_pending_widget_updates"] = updates
             st.rerun()
 
-    if use_rewrite_clicked and st.session_state.get("coached_rewrite"):
-        st.session_state["_pending_widget_updates"] = {"problem_statement_input": st.session_state["coached_rewrite"]}
-        st.rerun()
-
     feedback = st.session_state.get("coach_feedback")
     define_feedback = st.session_state.get("define_feedback")
+    rewrites = st.session_state.get("coached_rewrites") or {}
+
     if feedback is not None:
         st.subheader("AI Coach feedback")
-        st.metric("Problem statement quality", f"{feedback.score}/100")
-        st.caption(f"Detected context: {feedback.detected_context.replace('_', ' ')}")
+        c1, c2 = st.columns(2)
+        c1.metric("Problem statement quality", f"{feedback.score}/100")
+        c2.metric("Define section quality", f"{define_feedback.score}/100" if define_feedback else "N/A")
 
         if feedback.strengths:
             st.success("Problem statement strengths")
@@ -198,30 +211,50 @@ def render_app() -> None:
             st.warning("Problem statement improvements")
             st.markdown("\n".join([f"- {item}" for item in feedback.missing_components]))
 
-        if define_feedback is not None:
-            st.metric("Define section quality", f"{define_feedback.score}/100")
-            if define_feedback.strengths:
-                st.success("Define fields that are solid")
-                st.markdown("\n".join([f"- {item}" for item in define_feedback.strengths]))
-            if define_feedback.improvements:
-                st.warning("Define field improvements")
-                st.markdown("\n".join([f"- {item}" for item in define_feedback.improvements]))
+        if define_feedback and define_feedback.improvements:
+            st.warning("Define field improvements")
+            st.markdown("\n".join([f"- {item}" for item in define_feedback.improvements]))
 
-        st.info(f"Suggested rewrite template: {feedback.suggested_rewrite}")
-        st.write("**Coached rewrite (based on your draft):**")
-        st.text_area(
-            "Coached rewrite preview",
-            value=st.session_state.get("coached_rewrite") or "",
-            height=100,
-            disabled=True,
-            label_visibility="collapsed",
-        )
+        st.info(f"Suggested problem statement template: {feedback.suggested_rewrite}")
+
+        st.write("**Coached rewrites for all currently filled Define fields**")
+        for field_name, rewrite in rewrites.items():
+            st.markdown(f"**{field_name.replace('_', ' ').title()}**")
+            st.caption(rewrite)
 
         notes = st.session_state.get("prefill_notes") or []
         if notes:
             st.info("Only empty fields were auto-filled:\n" + "\n".join([f"- {n}" for n in notes]))
         else:
-            st.info("No fields were overwritten. Everything already had values.")
+            st.info("No fields were overwritten.")
+
+        st.subheader("Ask a follow-up coaching question")
+        qcol1, qcol2 = st.columns([4, 1])
+        with qcol1:
+            question = st.text_input("Ask about any Define content or Lean Six Sigma tool", key="coach_question")
+        with qcol2:
+            asked = st.button("Ask")
+        if asked:
+            st.session_state["coach_answer"] = answer_coaching_question(
+                question,
+                {
+                    "problem_statement": problem_statement,
+                    "project_y": project_y,
+                    "goal_statement": goal_statement,
+                    "goal_metric": goal_metric,
+                },
+            )
+        if st.session_state.get("coach_answer"):
+            st.success(st.session_state["coach_answer"])
+
+        guidance = st.session_state.get("tool_guidance") or []
+        if guidance:
+            st.subheader("Black Belt Lean Six Sigma tool guidance")
+            for item in guidance:
+                with st.expander(item.tool_name):
+                    st.write(f"**When to use:** {item.when_to_use}")
+                    st.write(f"**Expected output:** {item.output_expected}")
+                    st.write(f"**Coach prompt:** {item.starter_prompt}")
 
     if not submitted:
         return
@@ -273,10 +306,7 @@ def render_app() -> None:
     passed, issues = quality_gate(pkg)
 
     st.subheader("Quality Gate")
-    if passed:
-        st.success("PASS: export requirements met.")
-    else:
-        st.error(f"FAIL: {issues}")
+    st.success("PASS: export requirements met.") if passed else st.error(f"FAIL: {issues}")
 
     output_pptx = render_single_slide(pkg, Path("examples") / "sample_a3_single_slide.pptx")
     with open(output_pptx, "rb") as f:
