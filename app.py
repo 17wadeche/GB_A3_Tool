@@ -8,14 +8,7 @@ import streamlit as st
 from a3_autopilot.dmaic import orchestrate_dmaic
 from a3_autopilot.ingestion import load_dataset
 from a3_autopilot.models import DefineInput, GoalMetric, MeasureInput, TeamMember
-from a3_autopilot.problem_coach import (
-    answer_coaching_question,
-    assess_define_section,
-    build_define_draft,
-    evaluate_problem_statement,
-    generate_lean_tool_guidance,
-    rewrite_define_fields,
-)
+from a3_autopilot.problem_coach import coach_define_phase, tool_guidance_from_result
 from a3_autopilot.scoring import quality_gate
 from a3_autopilot.slide_builder import render_single_slide
 from a3_autopilot.utils import model_dump_compat, to_date_or_default
@@ -38,12 +31,9 @@ WIDGET_DEFAULTS = {
 
 def _init_state() -> None:
     for key, default in {
-        "coach_feedback": None,
-        "define_feedback": None,
-        "coached_rewrites": {},
+        "coach_result": None,
         "prefill_notes": [],
-        "tool_guidance": [],
-        "coach_answer": "",
+        "coach_error": "",
     }.items():
         if key not in st.session_state:
             st.session_state[key] = default
@@ -65,7 +55,7 @@ def _text_empty(value: str) -> bool:
 def render_app() -> None:
     st.set_page_config(page_title="A3 Autopilot", layout="wide")
     st.title("A3 Autopilot")
-    st.caption("Black Belt-style DMAIC coach with advanced Lean Six Sigma tooling support.")
+    st.caption("Black Belt-style DMAIC coach with AI-powered Define coaching and Lean Six Sigma tool guidance.")
     _init_state()
 
     sections = st.tabs(["A) Define", "B) Measure", "C) Analyze", "D) Improve", "E) Control", "F) Lean Tool Coach"])
@@ -94,11 +84,7 @@ def render_app() -> None:
                 due_date = st.date_input("Due date", value=date.today() + timedelta(days=60))
                 baseline = st.number_input("Baseline", min_value=0.0, key="baseline", step=0.5)
 
-            team_raw = st.text_area(
-                "Team members (Name:Role per line)",
-                key="team_raw",
-                placeholder="Name:Role",
-            )
+            team_raw = st.text_area("Team members (Name:Role per line)", key="team_raw", placeholder="Name:Role")
 
         with sections[1]:
             st.subheader("Measure")
@@ -118,109 +104,92 @@ def render_app() -> None:
 
         with sections[5]:
             st.subheader("Lean Tool Coach")
-            st.markdown("Use this to guide advanced LSS tools: VOC, CTQ, SIPOC, VSM, process mapping, MSA, capability, and control plans.")
+            st.markdown("Ask anything about VOC, CTQ, SIPOC, process mapping, VSM, MSA, capability, and control planning.")
+            question = st.text_input("Coaching question (optional)", key="coach_question")
 
         coach_clicked = st.form_submit_button("Ask AI Coach")
         submitted = st.form_submit_button("Generate complete DMAIC A3")
 
     if coach_clicked:
-        feedback = evaluate_problem_statement(problem_statement)
-        define_feedback = assess_define_section(
-            problem_statement,
-            project_y,
-            goal_statement,
-            do_not_harm,
-            business_impact,
-            scope_in,
-            scope_out,
-            goal_metric,
-            baseline,
-            target,
-        )
-        draft = build_define_draft(problem_statement)
-        rewrites = rewrite_define_fields(
-            {
-                "problem_statement": problem_statement,
-                "project_y": project_y,
-                "goal_statement": goal_statement,
-                "do_not_harm": do_not_harm,
-                "business_impact": business_impact,
-                "scope_in": scope_in,
-                "scope_out": scope_out,
-                "goal_metric": goal_metric,
-            }
-        )
+        define_fields = {
+            "problem_statement": problem_statement,
+            "project_y": project_y,
+            "goal_statement": goal_statement,
+            "do_not_harm": do_not_harm,
+            "business_impact": business_impact,
+            "scope_in": scope_in,
+            "scope_out": scope_out,
+            "goal_metric": goal_metric,
+            "baseline": baseline,
+            "target": target,
+            "due_date": str(due_date),
+        }
+        try:
+            result = coach_define_phase(problem_statement, define_fields, question=question)
+            st.session_state["coach_result"] = result
+            st.session_state["coach_error"] = ""
 
-        updates: dict[str, str | float] = {}
-        notes: list[str] = []
-        if _text_empty(problem_statement) and rewrites.get("problem_statement"):
-            updates["problem_statement_input"] = rewrites["problem_statement"]
-            notes.append("Filled Problem statement from AI coaching rewrite.")
-        if _text_empty(project_y):
-            updates["project_y"] = draft.project_y
-            notes.append("Filled Project Y.")
-        if _text_empty(goal_statement):
-            updates["goal_statement"] = draft.goal_statement
-            notes.append("Filled Goal statement.")
-        if _text_empty(do_not_harm):
-            updates["do_not_harm"] = draft.do_not_harm
-            notes.append("Filled Do not harm.")
-        if _text_empty(business_impact):
-            updates["business_impact"] = draft.business_impact
-            notes.append("Filled Business impact.")
-        if _text_empty(scope_in):
-            updates["scope_in"] = draft.scope_in
-            notes.append("Filled Scope in.")
-        if _text_empty(scope_out):
-            updates["scope_out"] = draft.scope_out
-            notes.append("Filled Scope out.")
-        if _text_empty(goal_metric):
-            updates["goal_metric"] = draft.goal_metric
-            notes.append("Filled Goal metric.")
-        if baseline <= 0:
-            updates["baseline"] = float(draft.baseline)
-            notes.append("Filled Baseline.")
-        if target <= 0:
-            updates["target"] = float(draft.target)
-            notes.append("Filled Target.")
+            updates = {}
+            notes: list[str] = []
+            proposed = result.get("proposed_fields", {}) or {}
+            for key in ["project_y", "goal_statement", "do_not_harm", "business_impact", "scope_in", "scope_out", "goal_metric"]:
+                if _text_empty(str(define_fields.get(key, ""))) and proposed.get(key):
+                    updates[key] = str(proposed[key])
+                    notes.append(f"Filled {key.replace('_', ' ').title()} from AI.")
 
-        st.session_state["coach_feedback"] = feedback
-        st.session_state["define_feedback"] = define_feedback
-        st.session_state["coached_rewrites"] = rewrites
-        st.session_state["prefill_notes"] = notes
-        st.session_state["tool_guidance"] = generate_lean_tool_guidance(problem_statement)
+            if baseline <= 0 and proposed.get("baseline"):
+                try:
+                    updates["baseline"] = float(proposed["baseline"])
+                    notes.append("Filled Baseline from AI.")
+                except (TypeError, ValueError):
+                    pass
+            if target <= 0 and proposed.get("target"):
+                try:
+                    updates["target"] = float(proposed["target"])
+                    notes.append("Filled Target from AI.")
+                except (TypeError, ValueError):
+                    pass
 
-        if updates:
-            st.session_state["_pending_widget_updates"] = updates
-            st.rerun()
+            st.session_state["prefill_notes"] = notes
+            if updates:
+                st.session_state["_pending_widget_updates"] = updates
+                st.rerun()
+        except RuntimeError as exc:
+            st.session_state["coach_error"] = str(exc)
 
-    feedback = st.session_state.get("coach_feedback")
-    define_feedback = st.session_state.get("define_feedback")
-    rewrites = st.session_state.get("coached_rewrites") or {}
+    if st.session_state.get("coach_error"):
+        st.error(st.session_state["coach_error"])
 
-    if feedback is not None:
+    result = st.session_state.get("coach_result")
+    if isinstance(result, dict):
+        pf = result.get("problem_feedback", {}) or {}
+        df = result.get("define_feedback", {}) or {}
+        rewrites = result.get("rewrites", {}) or {}
+
         st.subheader("AI Coach feedback")
         c1, c2 = st.columns(2)
-        c1.metric("Problem statement quality", f"{feedback.score}/100")
-        c2.metric("Define section quality", f"{define_feedback.score}/100" if define_feedback else "N/A")
+        c1.metric("Problem statement quality", f"{pf.get('score', 0)}/100")
+        c2.metric("Define section quality", f"{df.get('score', 0)}/100")
 
-        if feedback.strengths:
+        strengths = pf.get("strengths", []) or []
+        missing = pf.get("missing_components", []) or []
+        if strengths:
             st.success("Problem statement strengths")
-            st.markdown("\n".join([f"- {item}" for item in feedback.strengths]))
-        if feedback.missing_components:
+            st.markdown("\n".join([f"- {item}" for item in strengths]))
+        if missing:
             st.warning("Problem statement improvements")
-            st.markdown("\n".join([f"- {item}" for item in feedback.missing_components]))
+            st.markdown("\n".join([f"- {item}" for item in missing]))
 
-        if define_feedback and define_feedback.improvements:
+        define_improvements = df.get("improvements", []) or []
+        if define_improvements:
             st.warning("Define field improvements")
-            st.markdown("\n".join([f"- {item}" for item in define_feedback.improvements]))
+            st.markdown("\n".join([f"- {item}" for item in define_improvements]))
 
-        st.info(f"Suggested problem statement template: {feedback.suggested_rewrite}")
-
+        st.info(f"Suggested problem statement template: {pf.get('suggested_rewrite', '')}")
         st.write("**Coached rewrites for all currently filled Define fields**")
         for field_name, rewrite in rewrites.items():
             st.markdown(f"**{field_name.replace('_', ' ').title()}**")
-            st.caption(rewrite)
+            st.caption(str(rewrite))
 
         notes = st.session_state.get("prefill_notes") or []
         if notes:
@@ -228,33 +197,18 @@ def render_app() -> None:
         else:
             st.info("No fields were overwritten.")
 
-        st.subheader("Ask a follow-up coaching question")
-        qcol1, qcol2 = st.columns([4, 1])
-        with qcol1:
-            question = st.text_input("Ask about any Define content or Lean Six Sigma tool", key="coach_question")
-        with qcol2:
-            asked = st.button("Ask")
-        if asked:
-            st.session_state["coach_answer"] = answer_coaching_question(
-                question,
-                {
-                    "problem_statement": problem_statement,
-                    "project_y": project_y,
-                    "goal_statement": goal_statement,
-                    "goal_metric": goal_metric,
-                },
-            )
-        if st.session_state.get("coach_answer"):
-            st.success(st.session_state["coach_answer"])
-
-        guidance = st.session_state.get("tool_guidance") or []
-        if guidance:
+        tools = tool_guidance_from_result(result)
+        if tools:
             st.subheader("Black Belt Lean Six Sigma tool guidance")
-            for item in guidance:
+            for item in tools:
                 with st.expander(item.tool_name):
                     st.write(f"**When to use:** {item.when_to_use}")
                     st.write(f"**Expected output:** {item.output_expected}")
                     st.write(f"**Coach prompt:** {item.starter_prompt}")
+
+        answer = result.get("answer", "")
+        if answer:
+            st.success(answer)
 
     if not submitted:
         return
