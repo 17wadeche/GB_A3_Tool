@@ -48,3 +48,14 @@ def test_general_problem_uses_general_context() -> None:
     assert feedback.detected_context == "general"
     draft = build_define_draft(statement)
     assert "Workflow" in draft.project_y or "workflow" in draft.project_y.lower()
+
+
+def test_a3_problem_prefill_is_a3_specific() -> None:
+    statement = (
+        "The current A3 process is complex and burdensome, causing extra work and frustration "
+        "for coaches and participants. This leads to lower A3 completion rates."
+    )
+    draft = build_define_draft(statement)
+
+    assert "A3" in draft.project_y
+    assert "A3 completion rate" in draft.goal_metric

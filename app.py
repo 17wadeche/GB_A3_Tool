@@ -149,13 +149,19 @@ def render_app() -> None:
         st.caption(f"Detected context: {feedback.detected_context.replace('_', ' ')}")
         if feedback.strengths:
             st.success("Strong components detected")
-            st.write(feedback.strengths)
+            st.markdown("\n".join([f"- {item}" for item in feedback.strengths]))
         if feedback.missing_components:
             st.warning("Missing or weak components")
-            st.write(feedback.missing_components)
+            st.markdown("\n".join([f"- {item}" for item in feedback.missing_components]))
         st.info(f"Suggested rewrite template: {feedback.suggested_rewrite}")
         st.write("**Coached rewrite (based on your draft):**")
-        st.caption(st.session_state.get("coached_rewrite") or "")
+        st.text_area(
+            "Coached rewrite preview",
+            value=st.session_state.get("coached_rewrite") or "",
+            height=100,
+            disabled=True,
+            label_visibility="collapsed",
+        )
         st.info("Define fields were pre-filled. Review and edit as needed.")
 
     if not submitted:

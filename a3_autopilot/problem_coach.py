@@ -45,23 +45,22 @@ def _contains_any(text: str, keywords: List[str]) -> bool:
 
 def _extract_percent(text: str) -> float | None:
     match = re.search(r"(\d+(?:\.\d+)?)\s*%", text)
-    if match:
-        return float(match.group(1))
-    return None
+    return float(match.group(1)) if match else None
 
 
 def _extract_days(text: str) -> float | None:
     match = re.search(r"(\d+(?:\.\d+)?)\s*-?\s*day", text.lower())
-    if match:
-        return float(match.group(1))
-    return None
+    return float(match.group(1)) if match else None
+
+
+def _split_sentences(text: str) -> List[str]:
+    return [s.strip() for s in re.split(r"(?<=[.!?])\s+", text.strip()) if s.strip()]
 
 
 def detect_context(statement: str) -> ContextType:
     lowered = (statement or "").lower()
     complaint_keywords = [
         "complaint",
-        "complaints",
         "mdr",
         "regulatory",
         "triage",
@@ -69,19 +68,15 @@ def detect_context(statement: str) -> ContextType:
         "vigilance",
         "adverse event",
     ]
-    if _contains_any(lowered, complaint_keywords):
-        return "complaint_handling"
-    return "general"
+    return "complaint_handling" if _contains_any(lowered, complaint_keywords) else "general"
 
 
 def build_define_draft(statement: str) -> DefineDraft:
     text = (statement or "").strip()
     lowered = text.lower()
     context = detect_context(text)
-
     percent = _extract_percent(text)
     days = _extract_days(text)
-
     due = date.today() + timedelta(days=90)
 
     if context == "complaint_handling":
@@ -97,28 +92,41 @@ def build_define_draft(statement: str) -> DefineDraft:
             target = max(0.5, round(days * 0.5, 2))
 
         business_impact = (
-            "Delayed or incomplete complaint handling creates compliance risk, slower response, "
-            "and potential audit/patient impact."
+            "Delayed or incomplete complaint handling increases compliance risk, slows response time, "
+            "and can impact patient and audit outcomes."
         )
         scope_in = "Complaint intake, data entry, and quality review"
         scope_out = "CAPA implementation and post-market trend governance"
         do_not_harm = "Do not reduce complaint quality, regulatory compliance, or patient safety while improving speed."
     else:
-        project_y = "Workflow Throughput and On-Time Completion"
-        goal_metric = "On-time completion rate (%)"
-        baseline = percent if percent is not None else 65.0
-        target = min(98.0, baseline + 20.0)
+        if "a3" in lowered:
+            project_y = "A3 Completion Rate and Process Simplicity"
+            goal_metric = "A3 completion rate (%)"
+            baseline = percent if percent is not None else 60.0
+            target = min(95.0, baseline + 20.0)
+            business_impact = (
+                "An overly complex A3 process drives extra work and frustration, lowers completion rates, "
+                "and reduces confidence in continuous-improvement execution."
+            )
+            scope_in = "A3 initiation, coaching touchpoints, and completion workflow"
+            scope_out = "Non-A3 training programs and unrelated enterprise initiatives"
+            do_not_harm = "Do not reduce coaching quality or problem-solving rigor while simplifying A3 execution."
+        else:
+            project_y = "Workflow Throughput and On-Time Completion"
+            goal_metric = "On-time completion rate (%)"
+            baseline = percent if percent is not None else 65.0
+            target = min(98.0, baseline + 20.0)
+            business_impact = (
+                "Work execution friction drives delays, rework, missed commitments, and reduced team productivity."
+            )
+            scope_in = "Work intake, prioritization, handoffs, and execution"
+            scope_out = "Strategic planning and long-range portfolio decisions"
+            do_not_harm = "Do not increase burnout, defect rates, or customer impact while improving speed."
+
         if "delay" in lowered and days is not None:
             goal_metric = "Average task completion lead time (days)"
             baseline = days
             target = max(0.5, round(days * 0.6, 2))
-
-        business_impact = (
-            "Work execution friction drives delays, rework, missed commitments, and reduced team productivity."
-        )
-        scope_in = "Work intake, prioritization, handoffs, and execution"
-        scope_out = "Strategic planning and long-range portfolio decisions"
-        do_not_harm = "Do not increase burnout, defect rates, or customer impact while improving speed."
 
     return DefineDraft(
         project_y=project_y,
@@ -141,52 +149,38 @@ def rewrite_problem_statement(statement: str) -> str:
 
     lowered = text.lower()
     context = detect_context(text)
+    sentences = _split_sentences(text)
+
+    issue_sentence = sentences[0].rstrip(".") if sentences else text.rstrip(".")
+    impact_sentence = sentences[1].rstrip(".") if len(sentences) > 1 else ""
+    impact_sentence = re.sub(r"^(this|it)\s+(leads to|results in|causes)\s+", "", impact_sentence, flags=re.IGNORECASE)
+
     has_time = _contains_any(
         lowered,
-        [
-            "january",
-            "february",
-            "march",
-            "april",
-            "may",
-            "june",
-            "july",
-            "august",
-            "september",
-            "october",
-            "november",
-            "december",
-            "week",
-            "month",
-            "quarter",
-            "q1",
-            "q2",
-            "q3",
-            "q4",
-            "202",
-        ],
+        ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december", "week", "month", "quarter", "q1", "q2", "q3", "q4", "202"],
     )
+    timeframe = "Over the last quarter" if not has_time else "During the stated period"
 
     percent = _extract_percent(text)
     days = _extract_days(text)
-    timeframe = "in the last quarter" if not has_time else "during the stated period"
-
-    magnitude = "at a materially elevated rate"
+    evidence = "frequent delays and extra work"
     if percent is not None:
-        magnitude = f"at {percent:.1f}%"
+        evidence = f"a measurable gap of {percent:.1f}%"
     elif days is not None:
-        magnitude = f"with an average delay of {days:.1f} days"
+        evidence = f"an average delay of {days:.1f} days"
 
     if context == "complaint_handling":
-        location = "within the Medtronic complaint handling process"
-        impact = "creating compliance risk, slower triage, and potential patient impact"
+        location = "in the complaint handling workflow"
+        default_impact = "higher compliance risk, slower triage, and potential patient impact"
+    elif "a3" in lowered:
+        location = "in the current A3 workflow"
+        default_impact = "lower A3 completion rates and reduced value from the A3 method"
     else:
-        location = "within the current team workflow"
-        impact = "causing missed commitments, rework, and reduced productivity"
+        location = "in the current team workflow"
+        default_impact = "missed commitments, rework, and reduced productivity"
 
-    return (
-        f"{timeframe.capitalize()}, {location}, {text.rstrip('.')} occurs {magnitude}, {impact}."
-    )
+    impact = impact_sentence if impact_sentence else default_impact
+    return f"{timeframe}, {location}, {issue_sentence}. Evidence includes {evidence}. This results in {impact}."
 
 
 def evaluate_problem_statement(statement: str) -> ProblemStatementFeedback:
@@ -197,37 +191,22 @@ def evaluate_problem_statement(statement: str) -> ProblemStatementFeedback:
     strengths: List[str] = []
     missing: List[str] = []
 
-    has_where = _contains_any(lowered, ["medtronic", "site", "plant", "department", "process", "team", "workflow"])
+    has_where = _contains_any(lowered, ["medtronic", "site", "plant", "department", "process", "team", "workflow", "a3"])
     has_when = _contains_any(
         lowered,
-        [
-            "january",
-            "february",
-            "march",
-            "april",
-            "may",
-            "june",
-            "july",
-            "august",
-            "september",
-            "october",
-            "november",
-            "december",
-            "week",
-            "month",
-            "quarter",
-            "q1",
-            "q2",
-            "q3",
-            "q4",
-            "202",
-        ],
+        ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december", "week", "month", "quarter", "q1", "q2", "q3", "q4", "202"],
     )
-    has_what = _contains_any(lowered, ["complaint", "nonconformance", "defect", "error", "delay", "difficult", "slow"])
-    has_magnitude = _contains_any(lowered, ["%", "percent", "days", "hours", "records", "cases", "incidents", "count", "rate"])
+    has_what = _contains_any(
+        lowered,
+        ["complaint", "nonconformance", "defect", "error", "delay", "difficult", "slow", "complex", "burdensome", "frustration"],
+    )
+    has_magnitude = _contains_any(
+        lowered,
+        ["%", "percent", "days", "hours", "records", "cases", "incidents", "count", "rate"],
+    )
     has_impact = _contains_any(
         lowered,
-        ["risk", "impact", "cost", "delay", "regulatory", "patient", "mdr", "compliance", "rework", "productivity", "missed"],
+        ["risk", "impact", "cost", "delay", "regulatory", "patient", "mdr", "compliance", "rework", "productivity", "missed", "frustration", "completion"],
     )
 
     if len(text.split()) >= 20:
@@ -246,7 +225,7 @@ def evaluate_problem_statement(statement: str) -> ProblemStatementFeedback:
         missing.append("Add a clear time frame (for example, Jan-Mar 2026 or Q1 2026).")
 
     if has_what:
-        strengths.append("Clearly names the performance issue.")
+        strengths.append("Clearly names the core issue.")
     else:
         missing.append("Name the core issue explicitly.")
 
@@ -264,12 +243,12 @@ def evaluate_problem_statement(statement: str) -> ProblemStatementFeedback:
 
     if context == "complaint_handling":
         rewrite_template = (
-            "From [time period], in the Medtronic [site/team/process], [complaint-handling issue] occurs at "
-            "[measured magnitude], resulting in [regulatory/patient/business impact]."
+            "From [time period], in [complaint process/site], [complaint issue] occurs at [measured magnitude], "
+            "resulting in [regulatory/patient/business impact]."
         )
     else:
         rewrite_template = (
-            "From [time period], in the [team/process], [workflow issue] occurs at [measured magnitude], "
+            "From [time period], in [team/process], [workflow issue] occurs at [measured magnitude], "
             "resulting in [delivery/quality/cost/productivity impact]."
         )
 
